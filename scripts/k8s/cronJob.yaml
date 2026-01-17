@@ -12,4 +12,7 @@ spec:
             - name: hello
               image: cr.yandex/crpjhav5dledksn6gaeo/labkeeper-e2e:latest
               imagePullPolicy: Always
+              env:
+                - name: E2E_HOST
+                  value: https://labkeeper.io
           restartPolicy: OnFailure
