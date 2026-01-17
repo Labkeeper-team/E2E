@@ -1,15 +1,16 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: hello
+  namespace: type-3
+  name: e2e
 spec:
-  schedule: "* 2 * * *"
+  schedule: "0 * * * *"
   jobTemplate:
     spec:
       template:
         spec:
           containers:
-            - name: hello
+            - name: e2e
               image: cr.yandex/crpjhav5dledksn6gaeo/labkeeper-e2e:latest
               imagePullPolicy: Always
               env:
