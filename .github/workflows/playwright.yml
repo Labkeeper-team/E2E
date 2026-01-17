@@ -29,5 +29,5 @@ jobs:
     - name: Deploy to Kubernetes
       shell: bash
       run: |
-        kubectl delete --ignore-not-found=true -f ./scripts/k8s/cronJon.yaml
+        kubectl delete --ignore-not-found=true -f ./scripts/k8s/cronJob.yaml
         kubectl apply -f ./scripts/k8s/cronJob.yaml
