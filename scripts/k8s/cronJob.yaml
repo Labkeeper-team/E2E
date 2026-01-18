@@ -26,4 +26,19 @@ spec:
                     secretKeyRef:
                       key: type_3_e2e_chat_id
                       name: type-3-e2e-secrets
+                - name: E2E_CAPTCHA_BYPASS_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      key: type_3_e2e_captcha_bypass_token
+                      name: type-3-e2e-secrets
+                - name: E2E_USER_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      key: type_3_e2e_user_password
+                      name: type-3-e2e-secrets
+                - name: E2E_USER_EMAIL
+                  valueFrom:
+                    secretKeyRef:
+                      key: type_3_e2e_user_email
+                      name: type-3-e2e-secrets
           restartPolicy: OnFailure
