@@ -22,7 +22,16 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: 'html',
+  reporter: [
+    ['list'],
+    process.env.E2E_TELEGRAM_BOT_TOKEN ? [
+      '@b3nab/playwright-telegram-reporter',
+      {
+        botToken: process.env.E2E_TELEGRAM_BOT_TOKEN,
+        chatId: process.env.E2E_TELEGRAM_CHAT_ID,
+      },
+    ] : ['html', { open: 'never', outputFolder: 'playwright-report' }],
+  ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */

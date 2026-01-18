@@ -16,4 +16,14 @@ spec:
               env:
                 - name: E2E_HOST
                   value: https://labkeeper.io
+                - name: E2E_TELEGRAM_BOT_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      key: type_3_e2e_bot_token
+                      name: type-3-e2e-secrets
+                - name: E2E_TELEGRAM_CHAT_ID
+                  valueFrom:
+                    secretKeyRef:
+                      key: type_3_e2e_chat_id
+                      name: type-3-e2e-secrets
           restartPolicy: OnFailure
