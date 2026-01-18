@@ -15,7 +15,32 @@ console.info(`
 
 test('has title', async ({ page }) => {
     await page.goto(`${host}?captcha=${captchaBypassToken}`);
-
-    // Expect a title "to contain" a substring.
     await expect(page).toHaveTitle(/Labkeeper/);
+});
+
+test('simple login', async ({ page }) => {
+    await page.goto(`${host}?captcha=${captchaBypassToken}`);
+
+    await expect(page).toHaveTitle(/Labkeeper/);
+    await page.getByRole('button', { name: 'Login' }).click();
+    await page.getByRole('textbox', { name: 'Login' }).click();
+    await page.getByRole('textbox', { name: 'Login' }).fill(userEmail);
+    await page.getByRole('textbox', { name: 'Password' }).click();
+    await page.getByRole('textbox', { name: 'Password' }).fill(userPassword);
+    await page.locator('form').getByRole('button', { name: 'Login' }).click();
+    await page.getByText('Add more').click();
+    await page.getByText('Computation', { exact: true }).click();
+    await page.locator('#ide-segment-0').getByRole('textbox').click();
+    await page.locator('#ide-segment-0').getByRole('textbox').fill('a = 10 # 2\n\n\nb = a ^ 2');
+    await page.locator('#segments-container > div:nth-child(2)').click();
+    await page.getByRole('button', { name: 'Run' }).click();
+    await page.locator('div').filter({ hasText: /^Instructions$/ }).first().click();
+    await page
+        .getByRole('button', { name: /Run/i })
+        .waitFor({ state: 'attached' });
+    await expect(page.locator('#compile-result')).toHaveScreenshot("compiled.png")
+    await page.locator('div.dropdown-menu-container').nth(2).click();
+    await page.getByText('Delete').last().click();
+    await page.locator('div:nth-child(4) > .dropdown-menu-container > svg').click();
+    await page.getByRole('button', { name: 'Exit' }).click();
 });
