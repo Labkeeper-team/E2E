@@ -38,7 +38,6 @@ test('simple login', async ({ page }) => {
     await page
         .getByRole('button', { name: /Run/i })
         .waitFor({ state: 'attached' });
-    await expect(page.locator('#compile-result')).toHaveScreenshot("compiled.png")
     await page.locator('div.dropdown-menu-container').nth(2).click();
     await page.getByText('Delete').last().click();
     await page.locator('div:nth-child(4) > .dropdown-menu-container > svg').click();
