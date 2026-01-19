@@ -4,7 +4,7 @@ metadata:
   namespace: type-3
   name: e2e
 spec:
-  schedule: "* */6 * * *"
+  schedule: "0 */6 * * *"
   jobTemplate:
     spec:
       template:
