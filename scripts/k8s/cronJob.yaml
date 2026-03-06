@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  namespace: type-3
+  namespace: type-3-test
   name: e2e
 spec:
   schedule: "0 */6 * * *"

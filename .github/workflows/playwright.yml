@@ -31,4 +31,4 @@ jobs:
       run: |
         kubectl delete --ignore-not-found=true -f ./scripts/k8s/cronJob.yaml
         kubectl apply -f ./scripts/k8s/cronJob.yaml
-        kubectl -n type-3 create job e2e-test-startup --from=cronjob/e2e
+        kubectl -n type-3-test create job e2e-test-startup --from=cronjob/e2e
