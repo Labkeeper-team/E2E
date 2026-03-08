@@ -12,6 +12,8 @@ export async function doInLoggedEditor(page: Page, action: () => Promise<void>) 
     await page.getByRole('textbox', { name: 'Password' }).fill(input.userPassword);
     await page.locator('form').getByRole('button', { name: 'Login' }).click();
 
+    await waitForExitButtonToAppear(page)
+
     await action()
 
     await goToProjectsPageFromEditor(page)
@@ -74,4 +76,10 @@ export async function deleteAllProjectsFromProjectsPage(page: Page) {
         await page.getByText("Yes").click()
         await page.getByText("Yes").waitFor({state: "hidden"})
     }
+}
+
+export async function openGptModalAndPrompt(page: Page, prompt: string) {
+    await page.getByText("GPT").click()
+    await page.getByRole('textbox', { name: 'Enter prompt' }).fill(prompt);
+    await page.getByText("Send").click()
 }

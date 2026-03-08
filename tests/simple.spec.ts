@@ -2,11 +2,9 @@ import { test, expect } from '@playwright/test';
 import {input} from "./input";
 import {
     addComputeWithText,
-    addFirstMdSegment, addMdWithText, deleteAllProjectsFromProjectsPage,
-    doInLoggedEditor, goToProjectsPageFromEditor,
-    hideInstructions,
+    addFirstMdSegment, addMdWithText, doInLoggedEditor, hideInstructions, openGptModalAndPrompt,
     startCompilationAndGetResult,
-    switchToLatexMode, waitForExitButtonToAppear
+    switchToLatexMode
 } from "./dsl";
 
 console.info(`
@@ -24,7 +22,6 @@ test('has title', async ({ page }) => {
 
 test('simple pdf compile', async ({ page }) => {
     await doInLoggedEditor(page, async () => {
-        await waitForExitButtonToAppear(page)
         await hideInstructions(page)
         await addFirstMdSegment(page, "first md");
         await switchToLatexMode(page);
@@ -36,3 +33,16 @@ test('simple pdf compile', async ({ page }) => {
         expect(pdf).toContain("= 10")
     })
 });
+
+test('simple prompt test', async ({ page }) => {
+    await doInLoggedEditor(page, async () => {
+        await openGptModalAndPrompt(page, "Add Pushkin biography")
+        await addFirstMdSegment(page, "first md");
+        await addComputeWithText(page, "a = 10");
+        await switchToLatexMode(page);
+        const pdf = await startCompilationAndGetResult(page);
+        expect(pdf).toContain("md")
+        expect(pdf).toContain("= 10")
+        expect(pdf).toContain("Pushkin")
+    })
+})
