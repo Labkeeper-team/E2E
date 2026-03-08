@@ -1,35 +1,38 @@
 import { test, expect } from '@playwright/test';
-
-const host = process.env.E2E_HOST
-const captchaBypassToken = process.env.E2E_CAPTCHA_BYPASS_TOKEN
-const userEmail = process.env.E2E_USER_EMAIL
-const userPassword = process.env.E2E_USER_PASSWORD
+import {input} from "./input";
+import {
+    addComputeWithText,
+    addFirstMdSegment, addMdWithText, deleteAllProjectsFromProjectsPage,
+    doInLoggedEditor, goToProjectsPageFromEditor,
+    hideInstructions,
+    startCompilationAndGetResult,
+    switchToLatexMode, waitForExitButtonToAppear
+} from "./dsl";
 
 console.info(`
     Initializing e2e with:
-    - host=${host}
-    - captchaBypassToken=${captchaBypassToken}
-    - userEmail=${userEmail}
-    - userPassword=${userPassword}
+    - host=${input.host}
+    - captchaBypassToken=${input.captchaBypassToken}
+    - userEmail=${input.userEmail}
+    - userPassword=${input.userPassword}
 `)
 
 test('has title', async ({ page }) => {
-    await page.goto(`${host}?captcha=${captchaBypassToken}`);
+    await page.goto(`${input.host}?captcha=${input.captchaBypassToken}`);
     await expect(page).toHaveTitle(/Labkeeper/);
 });
 
-test('simple login', async ({ page }) => {
-    await page.goto(`${host}?captcha=${captchaBypassToken}`);
-
-    await expect(page).toHaveTitle(/Labkeeper/);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.getByRole('textbox', { name: 'Login' }).click();
-    await page.getByRole('textbox', { name: 'Login' }).fill(userEmail);
-    await page.getByRole('textbox', { name: 'Password' }).click();
-    await page.getByRole('textbox', { name: 'Password' }).fill(userPassword);
-    await page.locator('form').getByRole('button', { name: 'Login' }).click();
-
-    // TODO compute
-
-    await page.getByRole('button', { name: 'Exit' }).click();
+test('simple pdf compile', async ({ page }) => {
+    await doInLoggedEditor(page, async () => {
+        await waitForExitButtonToAppear(page)
+        await hideInstructions(page)
+        await addFirstMdSegment(page, "first md");
+        await switchToLatexMode(page);
+        await addComputeWithText(page, "a = 10");
+        await addMdWithText(page, "my md")
+        await addMdWithText(page, "my md last")
+        const pdf = await startCompilationAndGetResult(page);
+        expect(pdf).toContain("md")
+        expect(pdf).toContain("= 10")
+    })
 });

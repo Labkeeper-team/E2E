@@ -22,6 +22,7 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
+  timeout: 120000,
   reporter: [
     ['list'],
     process.env.E2E_TELEGRAM_BOT_TOKEN ? [
