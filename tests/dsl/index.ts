@@ -16,8 +16,6 @@ export async function doInLoggedEditor(page: Page, action: () => Promise<void>) 
 
     await action()
 
-    await goToProjectsPageFromEditor(page)
-    await deleteAllProjectsFromProjectsPage(page)
     await page.getByRole('button', { name: 'Exit' }).click();
 }
 
@@ -63,19 +61,6 @@ export async function startCompilationAndGetResult(page: Page) {
 
 export async function waitForExitButtonToAppear(page: Page) {
     await page.getByText("Exit").waitFor({state: "visible"})
-}
-
-export async function goToProjectsPageFromEditor(page: Page) {
-    await page.locator('button.image-button').first().click();
-}
-
-export async function deleteAllProjectsFromProjectsPage(page: Page) {
-    await page.getByText("Projects").waitFor({state: "visible"})
-    while (await page.getByText("Delete").count() > 0) {
-        await page.getByText("Delete").first().click()
-        await page.getByText("Yes").click()
-        await page.getByText("Yes").waitFor({state: "hidden"})
-    }
 }
 
 export async function openGptModalAndPrompt(page: Page, prompt: string) {
