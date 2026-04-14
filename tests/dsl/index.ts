@@ -2,7 +2,7 @@ import {expect, Page} from "@playwright/test";
 import {input} from "../input";
 
 export async function doInLoggedEditor(page: Page, action: () => Promise<void>) {
-    await page.goto(`${input.host}?captcha=${input.captchaBypassToken}`);
+    await page.goto(`${input.host}/project/default?captcha=${input.captchaBypassToken}`);
 
     await expect(page).toHaveTitle(/Labkeeper/);
     await page.getByRole('button', { name: 'Login' }).click();
