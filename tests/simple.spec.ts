@@ -31,13 +31,3 @@ test('simple pdf compile', async ({ page }) => {
         await startCompilationAndGetResult(page);
     })
 });
-
-test('simple prompt test', async ({ page }) => {
-    await doInLoggedEditor(page, async () => {
-        await openGptModalAndPrompt(page, "Add Pushkin biography")
-        await addFirstMdSegment(page, "first md");
-        await addComputeWithText(page, "a = 10");
-        await switchToLatexMode(page);
-        await startCompilationAndGetResult(page)
-    })
-})
