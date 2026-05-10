@@ -12,11 +12,13 @@ export async function doInLoggedEditor(page: Page, action: () => Promise<void>) 
     await page.getByRole('textbox', { name: 'Password' }).fill(input.userPassword);
     await page.locator('form').getByRole('button', { name: 'Login' }).click();
 
-    await waitForExitButtonToAppear(page)
+    await page.locator("span.selected-value").getByText(input.userEmail).waitFor({state: "visible"})
 
     await action()
 
-    await page.getByRole('button', { name: 'Exit' }).click();
+    await page.locator("span.selected-value").getByText(input.userEmail).click()
+    await page.locator("li").getByText("Log out").first().click();
+    await page.locator("div").getByText("Yes").click()
 }
 
 export async function hideInstructions(page: Page) {
@@ -31,8 +33,9 @@ export async function addFirstMdSegment(page: Page, text: string) {
 }
 
 export async function switchToLatexMode(page: Page) {
-    await page.locator('div').filter({ hasText: /^markdown$/ }).nth(1).click();
+    await page.locator("div.dropdown-menu-container").first().click()
     await page.getByText('latex', {exact: true}).click();
+    await page.getByText("Labkeeper").first().click();
 }
 
 export async function addMdWithText(page: Page, text: string) {
@@ -55,12 +58,8 @@ export async function startCompilationAndGetResult(page: Page) {
     await page
         .getByRole('button', { name: /Run/i })
         .waitFor({ state: 'attached' });
-    await page.waitForTimeout(3000)
-    return await page.locator('div[style="overflow: auto; height: 100%; width: 100%;"]').ariaSnapshot()
-}
-
-export async function waitForExitButtonToAppear(page: Page) {
-    await page.getByText("Exit").waitFor({state: "visible"})
+    await page.waitForTimeout(10000)
+    return await page.locator('div.result-container').ariaSnapshot()
 }
 
 export async function openGptModalAndPrompt(page: Page, prompt: string) {

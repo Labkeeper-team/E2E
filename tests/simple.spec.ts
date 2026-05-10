@@ -28,6 +28,9 @@ test('simple pdf compile', async ({ page }) => {
         await addComputeWithText(page, "a = 10");
         await addMdWithText(page, "my md")
         await addMdWithText(page, "my md last")
-        await startCompilationAndGetResult(page);
+        const content = await startCompilationAndGetResult(page);
+        expect(content).toContain("first md")
+        expect(content).toContain("= 10")
+        expect(content).toContain("my md")
     })
 });
