@@ -9,7 +9,8 @@
   "license": "ISC",
   "devDependencies": {
     "@playwright/test": "^1.57.0",
-    "@types/node": "^25.0.9"
+    "@types/node": "^25.0.9",
+    "dotenv": "^17.4.2"
   },
   "dependencies": {
     "@b3nab/playwright-telegram-reporter": "^1.1.1"
