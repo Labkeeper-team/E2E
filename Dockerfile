@@ -8,5 +8,6 @@ COPY ./package-lock.json /app/package-lock.json
 COPY ./playwright.config.ts /app/playwright.config.ts
 
 RUN npm i
+RUN npx playwright install msedge
 
 ENTRYPOINT ["npx", "playwright", "test"]
