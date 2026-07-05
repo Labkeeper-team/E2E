@@ -9,5 +9,6 @@ COPY ./playwright.config.ts /app/playwright.config.ts
 
 RUN npm i
 RUN npx playwright install msedge
+RUN npx playwright install chrome
 
 ENTRYPOINT ["npx", "playwright", "test"]

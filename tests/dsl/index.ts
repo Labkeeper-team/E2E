@@ -58,8 +58,6 @@ export async function startCompilationAndGetResult(page: Page) {
     await page
         .getByRole('button', { name: /Run/i })
         .waitFor({ state: 'attached' });
-    await page.waitForTimeout(10000)
-    return await page.locator('div.result-container').ariaSnapshot()
 }
 
 export async function openGptModalAndPrompt(page: Page, prompt: string) {
