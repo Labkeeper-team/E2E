@@ -4,9 +4,6 @@ services:
   nginx:
     image: nginx:alpine
     container_name: labkeeper-backend-proxy
-    env_file:
-      - path: .env
-        required: false
     environment:
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
       YANDEX_CAPTCHA_SITE_KEY: ysc1_hGTLsqtwdF4rdRDCezgRRJNM9St2o0vBCZOC97qMd63bcd7e
