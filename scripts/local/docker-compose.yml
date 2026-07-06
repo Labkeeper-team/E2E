@@ -1,0 +1,28 @@
+name: labkeeper-e2e
+
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: labkeeper-backend-proxy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
+      YANDEX_CAPTCHA_SITE_KEY: ysc1_hGTLsqtwdF4rdRDCezgRRJNM9St2o0vBCZOC97qMd63bcd7e
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    restart: unless-stopped
+
+  playwright:
+    build: ./../base/.
+    env_file:
+      - path: ../../.env
+        required: false
+    entrypoint: npx playwright test --ui-host=0.0.0.0 --ui-port=9237
+    ports:
+      - "9237:9237"
+    volumes:
+      - ../../tests:/app/tests
+      - ../../playwright-report:/app/playwright-report
+      - ../../test-results:/app/test-results

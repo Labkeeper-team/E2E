@@ -26,7 +26,8 @@ export async function hideInstructions(page: Page) {
 }
 
 export async function addFirstMdSegment(page: Page, text: string) {
-    await page.getByRole('button', { name: 'Add markdown' }).click();
+    await page.getByText('Add').first().click();
+    await page.getByText('Markdown').first().click();
     const editor = page.locator('.cm-content').last()
     await editor.click();
     await editor.fill(text);
@@ -39,14 +40,15 @@ export async function switchToLatexMode(page: Page) {
 }
 
 export async function addMdWithText(page: Page, text: string) {
-    await page.getByRole('button', { name: 'Add markdown' }).click();
+    await page.getByText('Add').first().click();
+    await page.getByText('Markdown').first().click();
     const editor = page.locator('.cm-content').last()
     await editor.click();
     await editor.fill(text);
 }
 
 export async function addComputeWithText(page: Page, text: string) {
-    await page.getByText('Add more').click();
+    await page.getByText('Add').first().click();
     await page.getByRole('list').getByText('Computation').click()
     const editor = page.locator('.cm-content').last()
     await editor.click();
