@@ -1,6 +1,7 @@
 # Как запускать playwright локально
 
-1. Создать в корне репо файл ```.env``` за основу взять файл ```.env.example``` и наполнить переменными
+0. Склонируйте репозиторий LabkeeperEditor и запустите в нем dev-сервер на localhost:3000
+1. Создать в корне репо файл ```.env``` за основу взять файл ```.env.example``` и наполнить переменными. Самое главное - указать ```E2E_HOST=http://nginx:80```
 2. Установить Docker
 3. В папке ```scipts/local``` выполнить команду
 
@@ -14,3 +15,7 @@ docker compose up
 ```bash
 docker compose exec playwright npx playwright test
 ```
+
+# Как запускать playwright на продовый стенд
+
+Все то же самое, как выше, но только переменная окружения ```E2E_HOST=https://labkeeper.io```

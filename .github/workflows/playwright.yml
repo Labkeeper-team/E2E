@@ -7,6 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+    - uses: redhat-actions/podman-login@v1
+      with:
+        registry: cr.yandex/crpjhav5dledksn6gaeo
+        username: oauth
+        password: ${{ secrets.YC_DOCKER_REGISTRY_TOKEN }}
     - uses: redhat-actions/buildah-build@v2
       with:
         image: labkeeper-e2e
