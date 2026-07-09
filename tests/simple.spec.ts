@@ -16,8 +16,11 @@ console.info(`
 `)
 
 test('has title', async ({ page }) => {
-    await page.goto(`${input.host}?captcha=${input.captchaBypassToken}`);
+    await page.goto(`${input.host}/project/default?captcha=${input.captchaBypassToken}`);
     await expect(page).toHaveTitle(/Labkeeper/);
+    await page.waitForLoadState('domcontentloaded');
+    await expect(page.getByText("Add").first()).toBeVisible();
+    await expect(page).toHaveScreenshot('simple-test.png');
 });
 
 test('simple pdf compile', async ({ page }) => {
