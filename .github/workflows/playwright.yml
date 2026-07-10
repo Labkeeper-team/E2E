@@ -5,23 +5,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REGISTRY: cr.yandex/crpjhav5dledksn6gaeo
+      IMAGE_NAME: labkeeper-e2e
+      IMAGE_TAG: ${{ github.run_number }}
     steps:
     - uses: actions/checkout@v4
     - uses: redhat-actions/podman-login@v1
       with:
-        registry: cr.yandex/crpjhav5dledksn6gaeo
+        registry: ${{ env.REGISTRY }}
         username: oauth
         password: ${{ secrets.YC_DOCKER_REGISTRY_TOKEN }}
     - uses: redhat-actions/buildah-build@v2
       with:
-        image: labkeeper-e2e
-        tags: latest
+        image: ${{ env.IMAGE_NAME }}
+        tags: ${{ env.IMAGE_TAG }}
         containerfiles: ./Dockerfile
     - uses: redhat-actions/push-to-registry@v2
       with:
-        image: labkeeper-e2e
-        tags: latest
-        registry: cr.yandex/crpjhav5dledksn6gaeo
+        image: ${{ env.IMAGE_NAME }}
+        tags: ${{ env.IMAGE_TAG }}
+        registry: ${{ env.REGISTRY }}
         username: oauth
         password: ${{ secrets.YC_DOCKER_REGISTRY_TOKEN }}
     - shell: bash
@@ -34,6 +38,7 @@ jobs:
     - name: Deploy to Kubernetes
       shell: bash
       run: |
+        sed -i "s|image: ${REGISTRY}/${IMAGE_NAME}:.*|image: ${REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|" ./scripts/k8s/cronJob.yaml
         kubectl delete --ignore-not-found=true -f ./scripts/k8s/cronJob.yaml
         kubectl apply -f ./scripts/k8s/cronJob.yaml
         kubectl -n type-3-test create job e2e-test-startup --from=cronjob/e2e
