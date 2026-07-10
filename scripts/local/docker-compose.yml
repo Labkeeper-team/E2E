@@ -13,6 +13,7 @@ services:
 
   playwright:
     build: ./../base/.
+    cpus: 1.0
     env_file:
       - path: ../../.env
         required: false

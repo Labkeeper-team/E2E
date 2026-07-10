@@ -13,6 +13,11 @@ spec:
             - name: e2e
               image: cr.yandex/crpjhav5dledksn6gaeo/labkeeper-e2e:latest
               imagePullPolicy: Always
+              resources:
+                requests:
+                  cpu: "1"
+                limits:
+                  cpu: "1"
               env:
                 - name: E2E_HOST
                   value: https://labkeeper.io
