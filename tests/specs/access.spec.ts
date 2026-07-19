@@ -32,11 +32,15 @@ test.describe('Project access', () => {
         );
         await app.editor.addSegment('Computation', 'a = 10');
         await app.compilation.runSuccessfully();
+        await app.editor.waitForSaved();
+        await app.navigation.reload();
+        await app.editor.expectSegmentTexts(['a = 10']);
         await app.editor.setPublicAccess(true);
 
         await app.auth.logout();
         await app.navigation.openEditor(project.path);
         await app.editor.expectReadOnlyPublicProject();
+        await app.editor.expectSegmentTexts(['a = 10']);
         await app.compilation.runAnonymousSuccessfully();
     });
 
@@ -52,15 +56,23 @@ test.describe('Project access', () => {
             'Computation',
             'load_csv(file_name = "data.csv")'
         );
+        await app.editor.waitForSaved();
         await app.files.open();
         await app.files.uploadTextFile('data.csv', 'value\n1\n2\n3\n');
         await app.files.close();
         await app.editor.waitForSaved();
+        await app.navigation.reload();
+        await app.editor.expectSegmentTexts([
+            'load_csv(file_name = "data.csv")',
+        ]);
         await app.editor.setPublicAccess(true);
 
         await app.auth.logout();
         await app.navigation.openEditor(project.path);
         await app.editor.expectReadOnlyPublicProject();
+        await app.editor.expectSegmentTexts([
+            'load_csv(file_name = "data.csv")',
+        ]);
         await app.compilation.runAnonymousWithCompilationErrors();
         await app.results.expectCompilationError(
             'You may not use files unauthenticated'

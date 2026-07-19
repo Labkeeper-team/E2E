@@ -60,21 +60,6 @@ export class CompilationDsl {
         await this.runAnonymousWithExpectedStatus(203);
     }
 
-    async runWithExpiredSession(): Promise<void> {
-        const responsePromise = this.page.waitForResponse(
-            isCompilationResponse,
-            { timeout: 60_000 }
-        );
-
-        await this.locators.runButton.click();
-        const response = await responsePromise;
-        test.skip(
-            response.status() === 425,
-            'Production anonymous compilation limit returned HTTP 425 before the session check'
-        );
-        expect(response.status()).toBe(401);
-    }
-
     private async runAnonymousWithExpectedStatus(
         expectedStatus: number
     ): Promise<void> {

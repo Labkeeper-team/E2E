@@ -29,11 +29,16 @@ export class AuthDsl {
             await expect(
                 this.locators.accountMenu(credentials.email)
             ).toBeVisible({ timeout: 30_000 });
-        } finally {
-            if (await this.locators.loginInput.isVisible()) {
-                await this.locators.loginInput.fill('');
-                await this.locators.passwordInput.fill('');
-            }
+        } catch (error) {
+            await Promise.all([
+                this.locators.loginInput
+                    .fill('', { timeout: 1_000 })
+                    .catch(() => undefined),
+                this.locators.passwordInput
+                    .fill('', { timeout: 1_000 })
+                    .catch(() => undefined),
+            ]);
+            throw error;
         }
     }
 

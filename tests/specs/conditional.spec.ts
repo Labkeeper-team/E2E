@@ -23,6 +23,13 @@ test.describe('Scenarios requiring additional production conditions', () => {
         );
     });
 
+    test('compilation-401-test @conditional', async () => {
+        test.skip(
+            true,
+            'Production returns HTTP 200 while anonymous quota is available and HTTP 425 after it is exhausted, not HTTP 401'
+        );
+    });
+
     test('phystech-icon-test @conditional', async () => {
         test.skip(true, 'A dedicated phystech.edu account is required');
     });

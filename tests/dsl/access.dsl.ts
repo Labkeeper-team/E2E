@@ -21,13 +21,6 @@ export class AccessDsl {
         await this.expectToast("You don't have enough rights to view the project");
     }
 
-    async expectSessionExpired(): Promise<void> {
-        const sessionExpired = this.locators.sessionExpiredPageMessage.or(
-            this.locators.toast.filter({ hasText: 'Session has expired' })
-        );
-        await expect(sessionExpired.first()).toBeVisible({ timeout: 30_000 });
-    }
-
     async expectAccessDenied(): Promise<void> {
         const accessDenied = this.locators.forbiddenPageMessage.or(
             this.locators.toast.filter({

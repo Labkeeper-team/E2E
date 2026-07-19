@@ -221,6 +221,7 @@ export class EditorDsl {
 
     async waitForSaved(): Promise<void> {
         await expect(this.locators.saveStatus).toBeVisible();
+        await this.page.waitForTimeout(1_100);
         await expect(this.locators.saveSpinner).toBeHidden({ timeout: 30_000 });
     }
 
@@ -244,7 +245,16 @@ export class EditorDsl {
             : this.locators.privateAccessOption;
 
         if (!(await option.getAttribute('class'))?.includes('checked')) {
+            const visibilityResponse = this.page.waitForResponse(
+                (response) =>
+                    response.request().method() === 'POST' &&
+                    /\/api\/v\d+\/public\/project\/[^/]+\/visibility$/.test(
+                        new URL(response.url()).pathname
+                    ),
+                { timeout: 30_000 }
+            );
             await option.click();
+            expect((await visibilityResponse).ok()).toBeTruthy();
         }
 
         await expect(option).toHaveClass(/checked/);

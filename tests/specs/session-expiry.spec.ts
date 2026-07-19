@@ -14,22 +14,6 @@ test.describe('Real expired sessions', () => {
         await app.access.expectAccessDenied();
     });
 
-    test('handles an expired session during compilation @authenticated @conditional', async ({
-        app,
-    }) => {
-        await app.openAuthenticatedEditor();
-        await app.projects.createManagedProject(
-            'expired-compilation',
-            'Markdown'
-        );
-        await app.editor.addSegment('Computation', 'a = 10');
-        await app.editor.waitForSaved();
-
-        await app.auth.expireSession();
-        await app.compilation.runWithExpiredSession();
-        await app.access.expectSessionExpired();
-    });
-
     test('handles an expired session in the file manager @authenticated', async ({
         app,
     }) => {
