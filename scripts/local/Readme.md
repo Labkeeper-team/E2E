@@ -1,21 +1,22 @@
-# Как запускать playwright локально
+# Как запускать Playwright локально
 
-0. Склонируйте репозиторий LabkeeperEditor и запустите в нем dev-сервер на localhost:3000
-1. Создать в корне репо файл ```.env``` за основу взять файл ```.env.example``` и наполнить переменными. Самое главное - указать ```E2E_HOST=http://nginx:80```
-2. Установить Docker
-3. В папке ```scipts/local``` выполнить команду
-
-```bash
-docker compose up
-```
-
-4. Теперь по адресу http://localhost:9237 доступен playwright ui - там можно запустить тесты
-5. Кроме того, можно запускать тесты командой
+0. Склонируйте репозиторий LabkeeperEditor и запустите в нем dev-сервер на `localhost:3000`.
+1. Создайте в корне E2E-репозитория файл `.env` на основе `.env.example`.
+2. Для локального фронтенда укажите `E2E_HOST=http://nginx:80`.
+3. Установите Docker.
+4. Из корня E2E-репозитория выполните:
 
 ```bash
-docker compose exec playwright npx playwright test
+docker compose -f scripts/local/docker-compose.yml up --build
 ```
 
-# Как запускать playwright на продовый стенд
+5. По адресу `http://localhost:9237` будет доступен Playwright UI.
+6. Тесты также можно запустить командой:
 
-Все то же самое, как выше, но только переменная окружения ```E2E_HOST=https://labkeeper.io```
+```bash
+docker compose -f scripts/local/docker-compose.yml exec playwright npx playwright test
+```
+
+# Как запускать Playwright на production
+
+Используйте те же команды, но установите `E2E_HOST=https://labkeeper.io`.

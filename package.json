@@ -3,14 +3,26 @@
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "scripts": {},
+  "scripts": {
+    "test": "playwright test",
+    "test:anonymous": "playwright test --grep @anonymous",
+    "test:authenticated": "playwright test --grep @authenticated",
+    "test:chrome": "playwright test --project=Google Chrome",
+    "test:edge": "playwright test --project=Microsoft Edge",
+    "test:local": "E2E_BROWSER=chromium playwright test",
+    "test:list": "playwright test --list",
+    "typecheck": "tsc --noEmit",
+    "check:architecture": "node scripts/check-test-architecture.mjs",
+    "check": "npm run typecheck && npm run check:architecture"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@playwright/test": "^1.57.0",
     "@types/node": "^25.0.9",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@b3nab/playwright-telegram-reporter": "^1.1.1"

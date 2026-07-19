@@ -1,69 +1,59 @@
-import {expect, Page} from "@playwright/test";
-import {input} from "../input";
+import type { Page, TestInfo } from '@playwright/test';
+import { AccessDsl } from './access.dsl';
+import { AuthDsl } from './auth.dsl';
+import { CompilationDsl } from './compilation.dsl';
+import { EditorDsl } from './editor.dsl';
+import { FileManagerDsl } from './file-manager.dsl';
+import { NavigationDsl } from './navigation.dsl';
+import { ProjectsDsl } from './projects.dsl';
+import { ResultDsl } from './result.dsl';
 
-export async function doInLoggedEditor(page: Page, action: () => Promise<void>) {
-    await page.goto(`${input.host}/project/default?captcha=${input.captchaBypassToken}`);
+export class LabkeeperDsl {
+    readonly access: AccessDsl;
+    readonly auth: AuthDsl;
+    readonly compilation: CompilationDsl;
+    readonly editor: EditorDsl;
+    readonly files: FileManagerDsl;
+    readonly navigation: NavigationDsl;
+    readonly projects: ProjectsDsl;
+    readonly results: ResultDsl;
 
-    await expect(page).toHaveTitle(/Labkeeper/);
-    await page.getByRole('button', { name: 'Login' }).click();
-    await page.getByRole('textbox', { name: 'Login' }).click();
-    await page.getByRole('textbox', { name: 'Login' }).fill(input.userEmail);
-    await page.getByRole('textbox', { name: 'Password' }).click();
-    await page.getByRole('textbox', { name: 'Password' }).fill(input.userPassword);
-    await page.locator('form').getByRole('button', { name: 'Login' }).click();
+    constructor(
+        private readonly page: Page,
+        testInfo: TestInfo
+    ) {
+        this.access = new AccessDsl(page);
+        this.auth = new AuthDsl(page);
+        this.compilation = new CompilationDsl(page);
+        this.editor = new EditorDsl(page);
+        this.files = new FileManagerDsl(page);
+        this.navigation = new NavigationDsl(page);
+        this.projects = new ProjectsDsl(page, testInfo);
+        this.results = new ResultDsl(page);
+    }
 
-    await page.locator("span.selected-value").getByText(input.userEmail).waitFor({state: "visible"})
+    async openAnonymousEditor(): Promise<void> {
+        await this.navigation.openEditor();
+    }
 
-    await action()
+    async openAuthenticatedEditor(): Promise<void> {
+        await this.navigation.openEditor();
+        await this.auth.login();
+    }
 
-    await page.locator("span.selected-value").getByText(input.userEmail).click()
-    await page.locator("li").getByText("Log out").first().click();
-    await page.locator("div").getByText("Yes").click()
+    async cleanup(): Promise<void> {
+        const projects = this.projects.managedProjects();
+        if (projects.length === 0) {
+            return;
+        }
+
+        await this.navigation.openEditor();
+        await this.auth.login();
+
+        for (const project of projects.reverse()) {
+            await this.projects.deleteManagedProject(project.id, project.names);
+        }
+    }
 }
 
-export async function hideInstructions(page: Page) {
-    await page.locator('div').filter({ hasText: /^Instructions$/ }).first().click();
-}
-
-export async function addFirstMdSegment(page: Page, text: string) {
-    await page.getByText('Add').first().click();
-    await page.getByText('Markdown').first().click();
-    const editor = page.locator('.cm-content').last()
-    await editor.click();
-    await editor.fill(text);
-}
-
-export async function switchToLatexMode(page: Page) {
-    await page.locator("div.dropdown-menu-container").first().click()
-    await page.getByText('latex', {exact: true}).click();
-    await page.getByText("Labkeeper").first().click();
-}
-
-export async function addMdWithText(page: Page, text: string) {
-    await page.getByText('Add').first().click();
-    await page.getByText('Markdown').first().click();
-    const editor = page.locator('.cm-content').last()
-    await editor.click();
-    await editor.fill(text);
-}
-
-export async function addComputeWithText(page: Page, text: string) {
-    await page.getByText('Add').first().click();
-    await page.getByRole('list').getByText('Computation').click()
-    const editor = page.locator('.cm-content').last()
-    await editor.click();
-    await editor.fill(text);
-}
-
-export async function startCompilationAndGetResult(page: Page) {
-    await page.getByRole('button', { name: 'Run' }).click();
-    await page
-        .getByRole('button', { name: /Run/i })
-        .waitFor({ state: 'attached' });
-}
-
-export async function openGptModalAndPrompt(page: Page, prompt: string) {
-    await page.getByText("GPT").click()
-    await page.getByRole('textbox', { name: 'Enter prompt' }).fill(prompt);
-    await page.getByText("Send").click()
-}
+export type { SegmentType } from './locators';
