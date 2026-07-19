@@ -12,7 +12,9 @@ services:
     restart: unless-stopped
 
   playwright:
-    build: ./../base/.
+    build:
+      context: ../..
+      dockerfile: scripts/base/Dockerfile
     cpus: 1.0
     env_file:
       - path: ../../.env
@@ -24,3 +26,5 @@ services:
       - ../../tests:/app/tests
       - ../../playwright-report:/app/playwright-report
       - ../../test-results:/app/test-results
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

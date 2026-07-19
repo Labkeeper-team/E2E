@@ -1,0 +1,54 @@
+import type { Locator, Page } from '@playwright/test';
+
+export class AuthLocators {
+    constructor(private readonly page: Page) {}
+
+    get loginButton(): Locator {
+        return this.page.getByRole('button', {
+            name: 'Login',
+            exact: true,
+        });
+    }
+
+    get loginForm(): Locator {
+        return this.page.locator('form').filter({ has: this.loginInput });
+    }
+
+    get loginInput(): Locator {
+        return this.page.getByPlaceholder('Login', { exact: true });
+    }
+
+    get passwordInput(): Locator {
+        return this.page.getByPlaceholder('Password', { exact: true });
+    }
+
+    get submitLoginButton(): Locator {
+        return this.loginForm.getByRole('button', {
+            name: 'Login',
+            exact: true,
+        });
+    }
+
+    accountMenu(email: string): Locator {
+        return this.page
+            .locator('.header-menu-select .selected-value')
+            .filter({ hasText: email });
+    }
+
+    get currentAccountMenu(): Locator {
+        return this.page
+            .locator('.header-menu-select .selected-value')
+            .filter({ hasText: /@/ })
+            .first();
+    }
+
+    get logoutOption(): Locator {
+        return this.page
+            .getByRole('listitem')
+            .filter({ hasText: /^Log out$/ });
+    }
+
+    get confirmLogoutButton(): Locator {
+        return this.page.getByRole('button', { name: 'Yes', exact: true });
+    }
+}

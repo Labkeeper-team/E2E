@@ -2,10 +2,7 @@ FROM mcr.microsoft.com/playwright:v1.57.0-noble
 
 WORKDIR /app
 
-COPY ../../package.json /app/package.json
-COPY ../../package-lock.json /app/package-lock.json
-COPY ../../playwright.config.ts /app/playwright.config.ts
+COPY package.json package-lock.json playwright.config.ts /app/
 
-RUN npm i
-RUN npx playwright install msedge
-RUN npx playwright install chrome
+RUN npm ci \
+    && npx playwright install msedge chrome
