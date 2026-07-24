@@ -2,8 +2,10 @@ name: Playwright Tests
 on:
   push:
     branches: [ master ]
+  workflow_dispatch:
 jobs:
   deploy:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     env:
       REGISTRY: cr.yandex/crpjhav5dledksn6gaeo
@@ -52,3 +54,23 @@ jobs:
         kubectl delete --ignore-not-found=true -f ./scripts/k8s/cronJob.yaml
         kubectl apply -f ./scripts/k8s/cronJob.yaml
         kubectl -n type-3-test create job e2e-test-startup --from=cronjob/e2e
+
+  run-once:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    env:
+      NAMESPACE: type-3-test
+      CRONJOB_NAME: e2e
+      JOB_NAME: e2e-manual-${{ github.run_number }}
+    steps:
+    - name: Configure Kubernetes
+      shell: bash
+      run: |
+        kubectl config set-cluster k8s --server=${{ secrets.KUBERNETES_URL }} --insecure-skip-tls-verify=true
+        kubectl config set-credentials admin --token=${{ secrets.KUBERNETES_SECRET }}
+        kubectl config set-context default --cluster=k8s --user=admin
+        kubectl config use-context default
+    - name: Start one-off E2E job
+      shell: bash
+      run: |
+        kubectl -n "${NAMESPACE}" create job "${JOB_NAME}" --from=cronjob/"${CRONJOB_NAME}"
