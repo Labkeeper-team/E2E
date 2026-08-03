@@ -15,7 +15,7 @@ const host = new URL(
     .toString()
     .replace(/\/$/, '');
 
-const brandedBrowserProjects: Project[] = [
+const productionBrowserProjects: Project[] = [
     {
         name: 'Microsoft Edge',
         use: { ...devices['Desktop Edge'], channel: 'msedge' },
@@ -23,6 +23,14 @@ const brandedBrowserProjects: Project[] = [
     {
         name: 'Google Chrome',
         use: { ...devices['Desktop Chrome'], channel: 'chrome' },
+    },
+    {
+        name: 'Windows Firefox',
+        use: { ...devices['Desktop Firefox'] },
+    },
+    {
+        name: 'macOS Safari',
+        use: { ...devices['Desktop Safari'] },
     },
 ];
 
@@ -34,7 +42,7 @@ const projects: Project[] =
                   use: { ...devices['Desktop Chrome'] },
               },
           ]
-        : brandedBrowserProjects;
+        : productionBrowserProjects;
 
 const reporter: ReporterDescription[] = process.env.E2E_TELEGRAM_BOT_TOKEN
     ? [

@@ -13,6 +13,7 @@ export class AuthDsl {
         credentials: UserCredentials = requireUserCredentials()
     ): Promise<void> {
         if (await this.locators.accountMenu(credentials.email).isVisible()) {
+            await this.acceptPrivacyPolicyIfRequired();
             return;
         }
 
@@ -29,6 +30,7 @@ export class AuthDsl {
             await expect(
                 this.locators.accountMenu(credentials.email)
             ).toBeVisible({ timeout: 30_000 });
+            await this.acceptPrivacyPolicyIfRequired();
         } catch (error) {
             await Promise.all([
                 this.locators.loginInput
@@ -73,5 +75,23 @@ export class AuthDsl {
 
     async expireSession(): Promise<void> {
         await this.page.context().clearCookies();
+    }
+
+    private async acceptPrivacyPolicyIfRequired(): Promise<void> {
+        if (!(await this.locators.privacyPolicyModal.isVisible())) {
+            return;
+        }
+
+        const responsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                /\/api\/v\d+\/public\/privacy-policy\/accept$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
+        await this.locators.acceptPrivacyPolicyButton.click();
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.locators.privacyPolicyModal).toBeHidden();
     }
 }

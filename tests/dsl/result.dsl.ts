@@ -12,6 +12,104 @@ export class ResultDsl {
         await expect(this.locators.visibleCanvas.first()).toBeVisible({
             timeout: 60_000,
         });
+        await expect(this.locators.loadingPdf).toBeHidden({ timeout: 60_000 });
+    }
+
+    async readPdfText(): Promise<string> {
+        await this.expectPdf();
+        await expect(this.locators.pdfTextLayers.first()).toBeAttached();
+
+        const fragments = await this.locators.pdfTextSpans.allTextContents();
+        return fragments
+            .map((fragment) => fragment.replace(/\s+/g, ' ').trim())
+            .filter(Boolean)
+            .join(' ')
+            .trim();
+    }
+
+    async expectPdfText(expected: string): Promise<void> {
+        await expect.poll(() => this.readPdfText(), { timeout: 60_000 }).toBe(
+            expected
+        );
+    }
+
+    async expectPdfTextContains(expected: string | RegExp): Promise<void> {
+        await expect
+            .poll(() => this.readPdfText(), { timeout: 60_000 })
+            .toMatch(expected);
+    }
+
+    async matchPdfTextSnapshot(name: string): Promise<void> {
+        expect(await this.readPdfText()).toMatchSnapshot(name);
+    }
+
+    async matchPdfPageSnapshot(
+        pageNumber: number,
+        name: string
+    ): Promise<void> {
+        const canvas = this.locators.pdfPageCanvas(pageNumber);
+        await expect(canvas).toBeVisible({ timeout: 60_000 });
+        const encodedPng = await canvas.evaluate((element) => {
+            if (!(element instanceof HTMLCanvasElement)) {
+                throw new Error('PDF page canvas was not found');
+            }
+
+            return element.toDataURL('image/png').split(',')[1];
+        });
+        expect(Buffer.from(encodedPng, 'base64')).toMatchSnapshot(name);
+    }
+
+    async scrollPdfToTop(): Promise<void> {
+        await this.expectPdf();
+        await this.locators.pdfScrollContainer.evaluate((container) => {
+            container.scrollTop = 0;
+        });
+        await expect
+            .poll(() =>
+                this.locators.pdfScrollContainer.evaluate(
+                    (container) => container.scrollTop
+                )
+            )
+            .toBe(0);
+    }
+
+    async expectPdfScrolledToText(text: string): Promise<void> {
+        const target = this.locators.pdfText(text);
+        await expect(target).toBeVisible({ timeout: 60_000 });
+        await expect
+            .poll(async () => {
+                const [scrollTop, containerBox, targetBox] = await Promise.all([
+                    this.locators.pdfScrollContainer.evaluate(
+                        (container) => container.scrollTop
+                    ),
+                    this.locators.pdfScrollContainer.boundingBox(),
+                    target.boundingBox(),
+                ]);
+
+                return {
+                    scrolled: scrollTop > 0,
+                    targetVisible: Boolean(
+                        containerBox &&
+                            targetBox &&
+                            targetBox.y + targetBox.height > containerBox.y &&
+                            targetBox.y < containerBox.y + containerBox.height
+                    ),
+                };
+            })
+            .toEqual({ scrolled: true, targetVisible: true });
+    }
+
+    async selectPdfText(text: string): Promise<void> {
+        const target = this.locators.pdfText(text);
+        await expect(target).toBeVisible({ timeout: 60_000 });
+        const box = await target.boundingBox();
+        expect(box).not.toBeNull();
+        await target.click({
+            position: {
+                x: Math.max(1, (box?.width ?? 2) / 2),
+                y: Math.max(1, (box?.height ?? 2) - 1),
+            },
+        });
     }
 
     async expectMarkdownText(text: string | RegExp): Promise<void> {
@@ -88,6 +186,11 @@ export class ResultDsl {
     async expectCompilationError(text: string | RegExp): Promise<void> {
         await this.openProblems();
         await expect(this.locators.errorText(text)).toBeVisible();
+    }
+
+    async expectAnyCompilationError(): Promise<void> {
+        await this.openProblems();
+        await expect(this.locators.errorGroups.first()).toBeVisible();
     }
 
     async expectToast(text?: string | RegExp): Promise<void> {

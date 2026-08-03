@@ -5,7 +5,10 @@ import { CompilationDsl } from './compilation.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
 import { NavigationDsl } from './navigation.dsl';
-import { ProjectsDsl } from './projects.dsl';
+import {
+    ProjectListUnauthorizedError,
+    ProjectsDsl,
+} from './projects.dsl';
 import { ResultDsl } from './result.dsl';
 
 export class LabkeeperDsl {
@@ -51,7 +54,22 @@ export class LabkeeperDsl {
         await this.auth.login();
 
         for (const project of projects.reverse()) {
-            await this.projects.deleteManagedProject(project.id, project.names);
+            try {
+                await this.projects.deleteManagedProject(
+                    project.id,
+                    project.names
+                );
+            } catch (error) {
+                if (!(error instanceof ProjectListUnauthorizedError)) {
+                    throw error;
+                }
+
+                await this.auth.login();
+                await this.projects.deleteManagedProject(
+                    project.id,
+                    project.names
+                );
+            }
         }
     }
 }
