@@ -38,6 +38,189 @@ export class FileManagerDsl {
         });
     }
 
+    async createFile(expectedName = 'new.txt'): Promise<void> {
+        const responsePromise = this.waitForFileMutation('PUT', 'upload');
+        await this.files.createFileButton.click();
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.files.fileRow(expectedName)).toBeVisible({
+            timeout: 30_000,
+        });
+    }
+
+    async renameFile(currentName: string, newName: string): Promise<void> {
+        await this.files.fileMenuButton(currentName).click();
+        await this.files.visibleEditMenuItem.click();
+        await expect(this.files.editingNameInput).toBeVisible();
+        await this.files.editingNameInput.fill(newName);
+
+        const responsePromise = this.waitForFileMutation('POST', 'rename');
+        await this.files.editingNameInput.press('Enter');
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.files.fileRow(newName)).toBeVisible({
+            timeout: 30_000,
+        });
+        await expect(this.files.fileRow(currentName)).toHaveCount(0);
+    }
+
+    async openTextFile(name: string): Promise<void> {
+        await this.files.fileRow(name).click();
+        await expect(this.files.textFileEditor).toBeVisible({
+            timeout: 30_000,
+        });
+        await expect(this.files.textFileEditorTitle).toHaveText(name);
+        await expect(this.files.textFileEditorContent).toBeVisible({
+            timeout: 30_000,
+        });
+    }
+
+    async editOpenTextFile(contents: string): Promise<void> {
+        const responsePromise = this.waitForFileMutation('PUT', 'upload');
+        await this.files.textFileEditorContent.fill(contents);
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.files.textFileSaveSpinner).toBeHidden({
+            timeout: 30_000,
+        });
+        await this.expectOpenTextFileContents(contents);
+    }
+
+    async closeTextFile(): Promise<void> {
+        await this.files.closeTextFileEditorButton.click();
+        await expect(this.files.textFileEditor).toBeHidden();
+    }
+
+    async expectOpenTextFileContents(contents: string): Promise<void> {
+        await expect
+            .poll(async () => {
+                const lines = await this.files.textFileEditorLines.allTextContents();
+                return lines.join('\n');
+            })
+            .toBe(contents);
+    }
+
+    async expectLatexSyntaxHighlighting(): Promise<void> {
+        await expect(this.files.textFileSyntaxTokens.first()).toBeVisible();
+        const tokens = await this.files.textFileSyntaxTokens.evaluateAll(
+            (elements) =>
+                elements.map((element) => ({
+                    className: element.className,
+                    text: element.textContent ?? '',
+                }))
+        );
+
+        expect(tokens.map((token) => token.text).join('')).toContain(
+            '\\section'
+        );
+        expect(
+            tokens.some((token) => token.className.trim().length > 0)
+        ).toBeTruthy();
+    }
+
+    async createFolder(name: string): Promise<void> {
+        await this.files.createFolderButton.click();
+        await expect(this.files.creatingFolderInput).toBeVisible();
+        await this.files.creatingFolderInput.fill(name);
+        await this.files.creatingFolderInput.press('Enter');
+        await expect(this.files.folderRow(name)).toBeVisible();
+    }
+
+    async selectRootFolder(): Promise<void> {
+        await this.files.rootFolderRow.click();
+    }
+
+    async renameFolder(currentName: string, newName: string): Promise<void> {
+        await this.files.folderRow(currentName).hover();
+        await this.files.folderEditButton(currentName).click();
+        await expect(this.files.editingNameInput).toBeVisible();
+        await this.files.editingNameInput.fill(newName);
+
+        const responsePromise = this.waitForFolderMutation('POST', 'rename');
+        await this.files.editingNameInput.press('Enter');
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.files.folderRow(newName)).toBeVisible({
+            timeout: 30_000,
+        });
+        await expect(this.files.folderRow(currentName)).toHaveCount(0);
+    }
+
+    async deleteFolder(name: string): Promise<void> {
+        const responsePromise = this.waitForFolderMutation('DELETE', 'delete');
+        await this.files.folderRow(name).hover();
+        await this.files.folderDeleteButton(name).click();
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(this.files.folderRow(name)).toHaveCount(0, {
+            timeout: 30_000,
+        });
+    }
+
+    async dragTextFileToRoot(
+        name: string,
+        contents: string
+    ): Promise<void> {
+        const dataTransfer = await this.page.evaluateHandle(
+            ({ fileName, fileContents }) => {
+                const transfer = new DataTransfer();
+                transfer.items.add(
+                    new File([fileContents], fileName, {
+                        type: 'text/plain',
+                    })
+                );
+                return transfer;
+            },
+            { fileName: name, fileContents: contents }
+        );
+
+        try {
+            await this.files.rootFolderRow.dispatchEvent('dragenter', {
+                dataTransfer,
+            });
+            await expect
+                .poll(async () => {
+                    await this.files.rootFolderRow.dispatchEvent('dragover', {
+                        dataTransfer,
+                    });
+                    return this.files.rootDropZone.getAttribute('class');
+                })
+                .toContain('file-tree-root-drop-zone-active');
+
+            const responsePromise = this.waitForFileMutation('PUT', 'upload');
+            await this.files.rootFolderRow.dispatchEvent('drop', {
+                dataTransfer,
+            });
+            expect((await responsePromise).ok()).toBeTruthy();
+        } finally {
+            await dataTransfer.dispose();
+        }
+
+        await expect(this.files.fileRow(name)).toBeVisible({
+            timeout: 30_000,
+        });
+    }
+
+    async expectFile(name: string): Promise<void> {
+        await expect(this.files.fileRow(name)).toBeVisible({
+            timeout: 30_000,
+        });
+    }
+
+    async expectFileInFolder(
+        folderName: string,
+        fileName: string
+    ): Promise<void> {
+        await expect(this.files.folderRow(folderName)).toBeVisible({
+            timeout: 30_000,
+        });
+        if ((await this.files.folderChildren(folderName).count()) === 0) {
+            await this.files.folderToggleButton(folderName).click();
+        }
+        await expect(
+            this.files.fileInFolder(folderName, fileName)
+        ).toBeVisible({ timeout: 30_000 });
+    }
+
+    async expectFileMissing(name: string): Promise<void> {
+        await expect(this.files.fileRow(name)).toHaveCount(0);
+    }
+
     async uploadOversizedFile(): Promise<void> {
         const maximumSize = 10 * 1024 * 1024;
         await this.files.uploadInput.setInputFiles({
@@ -67,5 +250,27 @@ export class FileManagerDsl {
         await expect(this.files.generatedCsvFiles.first()).toBeVisible({
             timeout: 30_000,
         });
+    }
+
+    private waitForFileMutation(method: string, operation: string) {
+        return this.page.waitForResponse(
+            (response) =>
+                response.request().method() === method &&
+                new RegExp(
+                    `/api/v\\d+/public/project/[^/]+/file/${operation}$`
+                ).test(new URL(response.url()).pathname),
+            { timeout: 30_000 }
+        );
+    }
+
+    private waitForFolderMutation(method: string, operation: string) {
+        return this.page.waitForResponse(
+            (response) =>
+                response.request().method() === method &&
+                new RegExp(
+                    `/api/v\\d+/public/project/[^/]+/file/folder/${operation}$`
+                ).test(new URL(response.url()).pathname),
+            { timeout: 30_000 }
+        );
     }
 }

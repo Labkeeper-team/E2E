@@ -73,7 +73,7 @@ export class EditorDsl {
     async appendToSegment(index: number, text: string): Promise<void> {
         const editor = this.locators.segmentEditor(index);
         await editor.click();
-        await editor.press('End');
+        await editor.press('Control+End');
         await editor.pressSequentially(text);
     }
 
@@ -83,7 +83,7 @@ export class EditorDsl {
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
         await editor.click();
-        await editor.press('End');
+        await editor.press('Control+End');
 
         for (let count = 0; count < characterCount; count += 1) {
             await editor.press('Backspace');
@@ -103,7 +103,7 @@ export class EditorDsl {
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
         await editor.click();
-        await editor.press('End');
+        await editor.press('Control+End');
         await this.page.keyboard.down('Shift');
 
         for (let count = 0; count < characterCount; count += 1) {
@@ -161,6 +161,137 @@ export class EditorDsl {
         for (const [index, text] of texts.entries()) {
             await this.expectSegmentText(index, text);
         }
+    }
+
+    async expectSegmentContainsText(
+        index: number,
+        text: string
+    ): Promise<void> {
+        await expect
+            .poll(async () => {
+                const lines = await this.locators
+                    .segmentLines(index)
+                    .allTextContents();
+                return lines.join('\n');
+            })
+            .toContain(text);
+    }
+
+    async expectLatexBoundaryCards(): Promise<void> {
+        await expect(this.locators.latexHeaderBoundary).toBeVisible();
+        await expect(this.locators.latexFooterBoundary).toBeVisible();
+    }
+
+    async insertLatexHeader(): Promise<void> {
+        const previousCount = await this.locators.segmentEditors.count();
+        await expect(this.locators.latexHeaderBoundary).toBeVisible();
+        await this.locators.latexHeaderBoundary.click();
+        await expect(this.locators.segmentEditors).toHaveCount(
+            previousCount + 1
+        );
+        await expect(this.locators.latexHeaderBoundary).toBeHidden();
+        await this.expectSegmentContainsText(0, '\\begin{document}');
+    }
+
+    async insertLatexFooter(): Promise<void> {
+        const previousCount = await this.locators.segmentEditors.count();
+        await expect(this.locators.latexFooterBoundary).toBeVisible();
+        await this.locators.latexFooterBoundary.click();
+        await expect(this.locators.segmentEditors).toHaveCount(
+            previousCount + 1
+        );
+        await expect(this.locators.latexFooterBoundary).toBeHidden();
+        await this.expectSegmentContainsText(previousCount, '\\end{document}');
+    }
+
+    async selectSegmentLine(index: number, lineNumber: number): Promise<void> {
+        const line = this.locators.segmentLine(index, lineNumber);
+        await expect(line).toBeVisible();
+        await line.click({ position: { x: 4, y: 4 } });
+        await this.page.keyboard.press('Home');
+        await this.page.keyboard.down('Shift');
+        await this.page.keyboard.press('End');
+        await this.page.keyboard.up('Shift');
+    }
+
+    async navigateSelectionToPdf(): Promise<void> {
+        const responsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                /\/api\/v\d+\/public\/project\/[^/]+\/navigation\/pdf$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
+
+        await expect(this.locators.syncToPdfButton).toBeEnabled();
+        await this.locators.syncToPdfButton.click();
+        expect((await responsePromise).ok()).toBeTruthy();
+    }
+
+    async navigatePdfSelectionToSource(): Promise<void> {
+        const responsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                /\/api\/v\d+\/public\/project\/[^/]+\/navigation\/doc$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
+
+        await expect(this.locators.syncToEditorButton).toBeEnabled();
+        await this.locators.syncToEditorButton.click();
+        expect((await responsePromise).ok()).toBeTruthy();
+    }
+
+    async expectCursorNearSegmentLine(
+        index: number,
+        lineNumber: number,
+        tolerance = 1
+    ): Promise<void> {
+        await expect(this.locators.segmentCodeMirror(index)).toHaveClass(
+            /cm-focused/
+        );
+        await expect
+            .poll(async () => {
+                const actualLine = await this.locators
+                    .segmentLines(index)
+                    .evaluateAll((lines) => {
+                        const anchor = document.getSelection()?.anchorNode;
+                        if (!anchor) {
+                            return 0;
+                        }
+
+                        return (
+                            lines.findIndex(
+                                (line) =>
+                                    line === anchor || line.contains(anchor)
+                            ) + 1
+                        );
+                    });
+                return Math.abs(actualLine - lineNumber);
+            })
+            .toBeLessThanOrEqual(tolerance);
+
+        await expect
+            .poll(async () => {
+                const containerBox =
+                    await this.locators.segmentsScrollContainer.boundingBox();
+                const lineBox = await this.locators
+                    .segmentLine(index, lineNumber)
+                    .boundingBox();
+
+                if (!containerBox || !lineBox) {
+                    return false;
+                }
+
+                return (
+                    lineBox.y >= containerBox.y &&
+                    lineBox.y + lineBox.height <=
+                        containerBox.y + containerBox.height
+                );
+            })
+            .toBe(true);
     }
 
     async openSearch(text?: string): Promise<void> {

@@ -31,7 +31,7 @@ E2E_PROJECT_PREFIX=e2e-autotest
 
 ```bash
 npm ci
-npx playwright install chrome msedge
+npx playwright install chrome msedge firefox webkit
 npm test
 ```
 
@@ -44,6 +44,9 @@ npm run test:anonymous
 npm run test:authenticated
 npm run test:chrome
 npm run test:edge
+npm run test:firefox
+npm run test:safari
+npm run test:scenarios
 ```
 
 Для разработки можно использовать встроенный Chromium:
@@ -53,7 +56,7 @@ npx playwright install chromium
 npm run test:local
 ```
 
-По умолчанию полный прогон выполняется в профилях `Microsoft Edge` и `Google Chrome`. Профили запускаются последовательно с одним worker, чтобы не создавать гонки за production-данные.
+По умолчанию полный прогон выполняется в профилях `Microsoft Edge`, `Google Chrome`, `Windows Firefox` и `macOS Safari`. Последние два используют Playwright Firefox и WebKit с настройками desktop-профилей. Все профили запускаются последовательно с одним worker, чтобы не создавать гонки за production-данные.
 
 ## Запуск в Docker
 
@@ -76,12 +79,23 @@ docker compose -f scripts/local/docker-compose.yml exec playwright npx playwrigh
 ## Структура тестов
 
 - `tests/specs` содержит только читаемые пользовательские сценарии.
+- `tests/scenarios` содержит длинные сквозные бизнес-сценарии.
 - `tests/dsl/locators` содержит все DOM-локаторы и CSS-селекторы.
 - `tests/dsl` содержит действия и проверки.
 - `tests/fixtures.ts` создает DSL и выполняет очистку временных проектов.
 - `docs/migration/playwright-tests.md` содержит матрицу переноса исходных тестов.
 
 Проверка `npm run check:architecture` завершится ошибкой, если в spec-файле появится прямой локатор или если в тестах появится подмена сетевого запроса.
+
+## Проверка PDF
+
+`ResultDsl` читает текст из слоя, который PDF.js создает после отображения PDF во фронтенде. Тест не скачивает исходный файл напрямую из S3. Доступны точное сравнение текста, проверка фрагмента, текстовый снапшот и визуальный снапшот страницы. Для визуального эталона берется PNG непосредственно из отрисованного canvas, поэтому в него не попадают кнопки и панели приложения.
+
+Playwright хранит отдельные эталоны для каждого браузерного профиля. Намеренно обновить их после проверки результата можно командой:
+
+```bash
+npx playwright test tests/scenarios --update-snapshots
+```
 
 ## Идемпотентность
 

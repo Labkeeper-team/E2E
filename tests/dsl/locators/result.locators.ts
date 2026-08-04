@@ -11,6 +11,36 @@ export class ResultLocators {
         return this.container.locator('canvas:visible');
     }
 
+    get pdfPages(): Locator {
+        return this.container.locator('[data-pdf-page]');
+    }
+
+    pdfPage(pageNumber: number): Locator {
+        return this.container.locator(
+            `[data-pdf-page="${pageNumber - 1}"]`
+        );
+    }
+
+    pdfPageCanvas(pageNumber: number): Locator {
+        return this.pdfPage(pageNumber).locator('canvas');
+    }
+
+    get pdfTextLayers(): Locator {
+        return this.container.locator('.textLayer');
+    }
+
+    get pdfTextSpans(): Locator {
+        return this.pdfTextLayers.locator('span');
+    }
+
+    pdfText(text: string): Locator {
+        return this.pdfTextLayers.getByText(text, { exact: true }).first();
+    }
+
+    get pdfScrollContainer(): Locator {
+        return this.pdfPages.first().locator('..');
+    }
+
     get markdown(): Locator {
         return this.container.locator('.result-markdown');
     }

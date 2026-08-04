@@ -59,8 +59,32 @@ export class EditorLocators {
         return this.page.locator('.segment-editor-container');
     }
 
+    get segmentsScrollContainer(): Locator {
+        return this.page.locator('#segments-container');
+    }
+
     segmentContainer(index: number): Locator {
         return this.segmentContainers.nth(index);
+    }
+
+    segmentEditorHost(index: number): Locator {
+        return this.page.locator(`#ide-segment-${index}`);
+    }
+
+    segmentCodeMirror(index: number): Locator {
+        return this.segmentEditorHost(index).locator('.cm-editor');
+    }
+
+    segmentLine(index: number, lineNumber: number): Locator {
+        return this.segmentLines(index).nth(lineNumber - 1);
+    }
+
+    get latexHeaderBoundary(): Locator {
+        return this.page.locator('.latex-header-segment');
+    }
+
+    get latexFooterBoundary(): Locator {
+        return this.page.locator('.latex-footer-segment');
     }
 
     segmentMenu(index: number): Locator {
@@ -207,5 +231,19 @@ export class EditorLocators {
 
     get closeModalArea(): Locator {
         return this.page.locator('.modal-overlay');
+    }
+
+    get syncToPdfButton(): Locator {
+        return this.page.getByRole('button', {
+            name: 'Go to PDF',
+            exact: true,
+        });
+    }
+
+    get syncToEditorButton(): Locator {
+        return this.page.getByRole('button', {
+            name: 'Go to source',
+            exact: true,
+        });
     }
 }

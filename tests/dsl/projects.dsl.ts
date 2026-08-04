@@ -4,6 +4,13 @@ import { ProjectLocators } from './locators';
 
 export type ProjectType = 'Markdown' | 'LaTeX';
 
+export class ProjectListUnauthorizedError extends Error {
+    constructor() {
+        super('Project list request returned 401');
+        this.name = 'ProjectListUnauthorizedError';
+    }
+}
+
 export class ProjectsDsl {
     private readonly locators: ProjectLocators;
     private readonly managedProjectsById = new Map<string, Set<string>>();
@@ -44,7 +51,11 @@ export class ProjectsDsl {
             { timeout: 30_000 }
         );
         await this.page.goto('/projects', { waitUntil: 'domcontentloaded' });
-        expect((await projectsResponse).status()).toBe(200);
+        const responseStatus = (await projectsResponse).status();
+        if (responseStatus === 401) {
+            throw new ProjectListUnauthorizedError();
+        }
+        expect(responseStatus).toBe(200);
         await expect(this.page).toHaveURL(/\/projects$/);
         await this.locators.addProjectButton.waitFor({ state: 'visible' });
     }
@@ -60,8 +71,29 @@ export class ProjectsDsl {
         await this.locators.addProjectModal.waitFor({ state: 'visible' });
         await this.locators.projectNameInput.fill(requestedName);
         const name = await this.locators.projectNameInput.inputValue();
-        await this.locators.projectTypeOption(type).click();
+        const projectTypeOption = this.locators.projectTypeOption(type);
+        await projectTypeOption.click();
+        await expect(projectTypeOption).toHaveClass(/checked/);
+
+        const createResponsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'PUT' &&
+                /\/api\/v\d+\/public\/project\/create$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
+        const typeResponsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                /\/api\/v\d+\/public\/project\/[^/]+\/type$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
         await this.locators.createProjectButton.click();
+        expect((await createResponsePromise).ok()).toBeTruthy();
+        expect((await typeResponsePromise).ok()).toBeTruthy();
         await expect(this.page).toHaveURL(/\/project\/[A-Za-z0-9_-]+$/);
 
         const path = new URL(this.page.url()).pathname;

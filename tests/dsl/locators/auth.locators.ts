@@ -51,4 +51,15 @@ export class AuthLocators {
     get confirmLogoutButton(): Locator {
         return this.page.getByRole('button', { name: 'Yes', exact: true });
     }
+
+    get privacyPolicyModal(): Locator {
+        return this.page.locator('.privacy-policy-acceptance-modal');
+    }
+
+    get acceptPrivacyPolicyButton(): Locator {
+        return this.privacyPolicyModal.getByRole('button', {
+            name: 'Accept',
+            exact: true,
+        });
+    }
 }

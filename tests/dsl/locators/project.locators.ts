@@ -33,7 +33,9 @@ export class ProjectLocators {
     }
 
     projectTypeOption(type: 'Markdown' | 'LaTeX'): Locator {
-        return this.addProjectModal.getByText(type, { exact: true });
+        return this.addProjectModal.locator('.labkeeper-radio').filter({
+            hasText: new RegExp(`^${type}$`),
+        });
     }
 
     get createProjectButton(): Locator {
