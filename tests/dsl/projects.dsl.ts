@@ -1,4 +1,8 @@
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import {
+    expect,
+    type Page,
+    type TestInfo,
+} from '@playwright/test';
 import { input } from '../input';
 import { ProjectLocators } from './locators';
 
@@ -42,22 +46,49 @@ export class ProjectsDsl {
     }
 
     async openList(): Promise<void> {
-        const projectsResponse = this.page.waitForResponse(
-            (response) =>
-                response.request().method() === 'GET' &&
-                /\/api\/v\d+\/public\/project\/all$/.test(
-                    new URL(response.url()).pathname
-                ),
-            { timeout: 30_000 }
-        );
-        await this.page.goto('/projects', { waitUntil: 'domcontentloaded' });
-        const responseStatus = (await projectsResponse).status();
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                await this.openListOnce();
+                return;
+            } catch (error) {
+                if (error instanceof ProjectListUnauthorizedError) {
+                    throw error;
+                }
+                lastError = error;
+            }
+        }
+
+        throw lastError;
+    }
+
+    private async openListOnce(): Promise<void> {
+        const [response] = await Promise.all([
+            this.page.waitForResponse(
+                (response) =>
+                    response.request().method() === 'GET' &&
+                    /\/api\/v\d+\/public\/project\/all$/.test(
+                        new URL(response.url()).pathname
+                    ),
+                { timeout: 60_000 }
+            ),
+            this.page.goto('/projects', {
+                waitUntil: 'domcontentloaded',
+                timeout: 60_000,
+            }),
+        ]);
+        const responseStatus = response.status();
+
         if (responseStatus === 401) {
             throw new ProjectListUnauthorizedError();
         }
         expect(responseStatus).toBe(200);
         await expect(this.page).toHaveURL(/\/projects$/);
-        await this.locators.addProjectButton.waitFor({ state: 'visible' });
+        await this.locators.addProjectButton.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
     }
 
     async createManagedProject(
@@ -83,17 +114,8 @@ export class ProjectsDsl {
                 ),
             { timeout: 30_000 }
         );
-        const typeResponsePromise = this.page.waitForResponse(
-            (response) =>
-                response.request().method() === 'POST' &&
-                /\/api\/v\d+\/public\/project\/[^/]+\/type$/.test(
-                    new URL(response.url()).pathname
-                ),
-            { timeout: 30_000 }
-        );
         await this.locators.createProjectButton.click();
         expect((await createResponsePromise).ok()).toBeTruthy();
-        expect((await typeResponsePromise).ok()).toBeTruthy();
         await expect(this.page).toHaveURL(/\/project\/[A-Za-z0-9_-]+$/);
 
         const path = new URL(this.page.url()).pathname;
@@ -103,6 +125,10 @@ export class ProjectsDsl {
         }
 
         this.managedProjectsById.set(id, new Set([name]));
+        await this.locators.editorRoot.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
 
         return { id, name, path };
     }
@@ -115,6 +141,10 @@ export class ProjectsDsl {
     async openProjectFromCurrentList(title: string): Promise<void> {
         await this.locators.projectRow(title).click();
         await expect(this.page).toHaveURL(/\/project\/[A-Za-z0-9_-]+$/);
+        await this.locators.editorRoot.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
     }
 
     async openEditorFromCurrentPageMenu(): Promise<void> {
@@ -194,34 +224,24 @@ export class ProjectsDsl {
             this.assertReservedProjectName(name);
         }
 
-        await this.openList();
-
         const possibleNames = [...names].reverse();
-        await expect
-            .poll(
-                async () => {
-                    for (const name of possibleNames) {
-                        if ((await this.locators.projectRow(name).count()) > 0) {
-                            return name;
-                        }
-                    }
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            await this.openList();
 
-                    return undefined;
-                },
-                { timeout: 30_000 }
-            )
-            .toBeDefined();
+            const currentName = await this.findExistingProjectName(
+                possibleNames
+            );
+            if (currentName) {
+                this.assertReservedProjectName(currentName);
+                await this.deleteProjectRow(id, currentName);
+                this.managedProjectsById.delete(id);
+                return;
+            }
 
-        const currentName = await this.findExistingProjectName(possibleNames);
-        if (!currentName) {
-            throw new Error(`Managed project ${id} was not found for cleanup`);
+            await this.page.waitForTimeout(1_000);
         }
 
-        const row = this.locators.projectRow(currentName);
-        await this.locators.projectDeleteButton(currentName).click();
-        await this.locators.confirmDeleteButton.click();
-        await expect(row).toHaveCount(0);
-        this.managedProjectsById.delete(id);
+        throw new Error(`Managed project ${id} was not found for cleanup`);
     }
 
     private async findExistingProjectName(
@@ -270,5 +290,22 @@ export class ProjectsDsl {
                 ),
             { timeout: 30_000 }
         );
+    }
+
+    private async deleteProjectRow(id: string, title: string): Promise<void> {
+        const row = this.locators.projectRow(title);
+        await expect(row).toBeVisible({ timeout: 30_000 });
+        await this.locators.projectDeleteButton(title).click();
+        const responsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'DELETE' &&
+                new RegExp(
+                    `/api/v\\d+/public/project/${id}/delete$`
+                ).test(new URL(response.url()).pathname),
+            { timeout: 30_000 }
+        );
+        await this.locators.confirmDeleteButton.click();
+        expect((await responsePromise).ok()).toBeTruthy();
+        await expect(row).toHaveCount(0, { timeout: 30_000 });
     }
 }

@@ -16,7 +16,9 @@ export class ProjectLocators {
 
     get addProjectButton(): Locator {
         return this.page
-            .locator('.add-project-button, .add-project-button-footer')
+            .locator(
+                'button.add-project-button:visible, .add-project-button-footer button:visible'
+            )
             .first();
     }
 
@@ -24,8 +26,12 @@ export class ProjectLocators {
         return this.page.locator('.add-project-modal');
     }
 
+    get editorRoot(): Locator {
+        return this.page.locator('.project-container');
+    }
+
     get projectListSurface(): Locator {
-        return this.page.locator('table').first();
+        return this.page.locator('.project-content-container');
     }
 
     get projectNameInput(): Locator {
@@ -46,8 +52,8 @@ export class ProjectLocators {
     }
 
     projectRow(title: string): Locator {
-        return this.page.locator('tr').filter({
-            has: this.page.getByText(title, { exact: true }),
+        return this.page.locator('tr, .projects-card').filter({
+            hasText: title,
         });
     }
 
@@ -60,7 +66,9 @@ export class ProjectLocators {
     }
 
     get editingProjectTitleInput(): Locator {
-        return this.page.locator('table input.input-base:not([disabled])');
+        return this.page.locator(
+            '.projects-list-wrapper input.input-base:not([disabled])'
+        );
     }
 
     projectDeleteButton(title: string): Locator {
