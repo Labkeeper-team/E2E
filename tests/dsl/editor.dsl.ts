@@ -1,26 +1,33 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { EditorLocators, type SegmentType } from './locators';
+import { ProjectViewDsl } from './project-view.dsl';
 
 export class EditorDsl {
     private readonly locators: EditorLocators;
 
-    constructor(private readonly page: Page) {
+    constructor(
+        private readonly page: Page,
+        private readonly projectView: ProjectViewDsl
+    ) {
         this.locators = new EditorLocators(page);
     }
 
     async hideInstructions(): Promise<void> {
+        await this.projectView.showEditor();
         if (await this.locators.instructionsHeader.isVisible()) {
             await this.locators.instructionsHeader.click();
         }
     }
 
     async setProjectType(type: 'markdown' | 'latex'): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.settingsButton.click();
         await this.locators.projectTypeOption(type).click();
         await this.page.keyboard.press('Escape');
     }
 
     async addSegment(type: SegmentType, text?: string): Promise<number> {
+        await this.projectView.showEditor();
         const index = await this.locators.segmentEditors.count();
 
         if (index === 0 && type === 'Latex') {
@@ -48,6 +55,7 @@ export class EditorDsl {
         type: SegmentType,
         text?: string
     ): Promise<number> {
+        await this.projectView.showEditor();
         const previousCount = await this.locators.segmentEditors.count();
         await this.locators.dividerButton(dividerIndex).click();
         await this.locators.dividerOption(dividerIndex, type).click();
@@ -65,14 +73,14 @@ export class EditorDsl {
 
     async fillSegment(index: number, text: string): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await editor.click();
+        await this.focusSegment(editor);
         await editor.fill(text);
         await this.expectSegmentText(index, text);
     }
 
     async appendToSegment(index: number, text: string): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await editor.click();
+        await this.focusSegment(editor);
         await editor.press('Control+End');
         await editor.pressSequentially(text);
     }
@@ -82,7 +90,7 @@ export class EditorDsl {
         characterCount: number
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await editor.click();
+        await this.focusSegment(editor);
         await editor.press('Control+End');
 
         for (let count = 0; count < characterCount; count += 1) {
@@ -92,7 +100,7 @@ export class EditorDsl {
 
     async selectAllAndDelete(index: number): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await editor.click();
+        await this.focusSegment(editor);
         await editor.press('Control+a');
         await editor.press('Backspace');
     }
@@ -102,7 +110,7 @@ export class EditorDsl {
         characterCount: number
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await editor.click();
+        await this.focusSegment(editor);
         await editor.press('Control+End');
         await this.page.keyboard.down('Shift');
 
@@ -115,8 +123,9 @@ export class EditorDsl {
     }
 
     async deleteSegment(index: number): Promise<void> {
+        await this.projectView.showEditor();
         const previousCount = await this.locators.segmentEditors.count();
-        const deleteOption = this.locators.segmentDeleteOption(index);
+        const deleteOption = this.locators.segmentDeleteOption();
 
         await this.page.keyboard.press('Escape');
         await this.locators.segmentMenu(index).click();
@@ -128,34 +137,42 @@ export class EditorDsl {
     }
 
     async moveSegmentUp(index: number): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.moveSegmentUpButton(index).click();
     }
 
     async moveSegmentDown(index: number): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.moveSegmentDownButton(index).click();
     }
 
     async undo(): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.undoButton.click();
     }
 
     async redo(): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.redoButton.click();
     }
 
     async expectSegmentCount(count: number): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.segmentEditors).toHaveCount(count);
     }
 
     async expectErrorDecorations(): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.errorDecorations.first()).toBeVisible();
     }
 
     async expectNoErrorDecorations(): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.errorDecorations).toHaveCount(0);
     }
 
     async expectSegmentTexts(texts: string[]): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.segmentEditors).toHaveCount(texts.length);
 
         for (const [index, text] of texts.entries()) {
@@ -167,6 +184,7 @@ export class EditorDsl {
         index: number,
         text: string
     ): Promise<void> {
+        await this.projectView.showEditor();
         await expect
             .poll(async () => {
                 const lines = await this.locators
@@ -178,11 +196,13 @@ export class EditorDsl {
     }
 
     async expectLatexBoundaryCards(): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.latexHeaderBoundary).toBeVisible();
         await expect(this.locators.latexFooterBoundary).toBeVisible();
     }
 
     async insertLatexHeader(): Promise<void> {
+        await this.projectView.showEditor();
         const previousCount = await this.locators.segmentEditors.count();
         await expect(this.locators.latexHeaderBoundary).toBeVisible();
         await this.locators.latexHeaderBoundary.click();
@@ -194,6 +214,7 @@ export class EditorDsl {
     }
 
     async insertLatexFooter(): Promise<void> {
+        await this.projectView.showEditor();
         const previousCount = await this.locators.segmentEditors.count();
         await expect(this.locators.latexFooterBoundary).toBeVisible();
         await this.locators.latexFooterBoundary.click();
@@ -205,6 +226,7 @@ export class EditorDsl {
     }
 
     async selectSegmentLine(index: number, lineNumber: number): Promise<void> {
+        await this.projectView.showEditor();
         const line = this.locators.segmentLine(index, lineNumber);
         await expect(line).toBeVisible();
         await line.click({ position: { x: 4, y: 4 } });
@@ -215,6 +237,7 @@ export class EditorDsl {
     }
 
     async navigateSelectionToPdf(): Promise<void> {
+        await this.projectView.showEditor();
         const responsePromise = this.page.waitForResponse(
             (response) =>
                 response.request().method() === 'POST' &&
@@ -229,7 +252,11 @@ export class EditorDsl {
         expect((await responsePromise).ok()).toBeTruthy();
     }
 
-    async navigatePdfSelectionToSource(): Promise<void> {
+    async navigatePdfSelectionToSource(expected?: {
+        segmentIndex: number;
+        line: number;
+    }): Promise<void> {
+        await this.projectView.showPdf();
         const responsePromise = this.page.waitForResponse(
             (response) =>
                 response.request().method() === 'POST' &&
@@ -241,7 +268,19 @@ export class EditorDsl {
 
         await expect(this.locators.syncToEditorButton).toBeEnabled();
         await this.locators.syncToEditorButton.click();
-        expect((await responsePromise).ok()).toBeTruthy();
+        const response = await responsePromise;
+        expect(response.ok()).toBeTruthy();
+
+        if (expected) {
+            const result = (await response.json()) as {
+                segmentId?: number;
+                line?: number;
+            };
+            expect(result.segmentId).toBe(expected.segmentIndex + 1);
+            expect(
+                Math.abs((result.line ?? Number.NEGATIVE_INFINITY) - expected.line)
+            ).toBeLessThanOrEqual(1);
+        }
     }
 
     async expectCursorNearSegmentLine(
@@ -249,29 +288,38 @@ export class EditorDsl {
         lineNumber: number,
         tolerance = 1
     ): Promise<void> {
-        await expect(this.locators.segmentCodeMirror(index)).toHaveClass(
-            /cm-focused/
-        );
-        await expect
-            .poll(async () => {
-                const actualLine = await this.locators
-                    .segmentLines(index)
-                    .evaluateAll((lines) => {
-                        const anchor = document.getSelection()?.anchorNode;
-                        if (!anchor) {
-                            return 0;
-                        }
+        await this.projectView.showEditor();
+        if (this.projectView.isMobile()) {
+            await expect(this.locators.segmentContainer(index)).toHaveClass(
+                /is-active/
+            );
+        } else {
+            await expect(this.locators.segmentCodeMirror(index)).toHaveClass(
+                /cm-focused/
+            );
+            await expect
+                .poll(async () => {
+                    const actualLine = await this.locators
+                        .segmentLines(index)
+                        .evaluateAll((lines) => {
+                            const anchor =
+                                document.getSelection()?.anchorNode;
+                            if (!anchor) {
+                                return 0;
+                            }
 
-                        return (
-                            lines.findIndex(
-                                (line) =>
-                                    line === anchor || line.contains(anchor)
-                            ) + 1
-                        );
-                    });
-                return Math.abs(actualLine - lineNumber);
-            })
-            .toBeLessThanOrEqual(tolerance);
+                            return (
+                                lines.findIndex(
+                                    (line) =>
+                                        line === anchor ||
+                                        line.contains(anchor)
+                                ) + 1
+                            );
+                        });
+                    return Math.abs(actualLine - lineNumber);
+                })
+                .toBeLessThanOrEqual(tolerance);
+        }
 
         await expect
             .poll(async () => {
@@ -295,6 +343,7 @@ export class EditorDsl {
     }
 
     async openSearch(text?: string): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.searchButton.click();
         await expect(this.locators.searchInput).toBeVisible();
 
@@ -304,20 +353,24 @@ export class EditorDsl {
     }
 
     async closeSearchWithEscape(): Promise<void> {
+        await this.projectView.showEditor();
         await this.page.keyboard.press('Escape');
         await expect(this.locators.searchInput).toBeHidden();
     }
 
     async closeSearchWithButton(): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.clearSearchButton.click();
         await expect(this.locators.searchInput).toBeHidden();
     }
 
     async pressEscape(): Promise<void> {
+        await this.projectView.showEditor();
         await this.page.keyboard.press('Escape');
     }
 
     async renameProjectWithEnter(title: string): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.editProjectTitleButton.click();
         await this.locators.projectTitleInput.fill(title);
         const renameResponse = this.waitForTitleChangeResponse();
@@ -327,6 +380,7 @@ export class EditorDsl {
     }
 
     async renameProjectWithBlur(title: string): Promise<void> {
+        await this.projectView.showEditor();
         await this.locators.editProjectTitleButton.click();
         await this.locators.projectTitleInput.fill(title);
         const renameResponse = this.waitForTitleChangeResponse();
@@ -336,6 +390,7 @@ export class EditorDsl {
     }
 
     async expectProjectTitle(title: string): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.projectTitleInput).toHaveValue(title);
     }
 
@@ -351,13 +406,19 @@ export class EditorDsl {
     }
 
     async waitForSaved(): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.saveStatus).toBeVisible();
         await this.page.waitForTimeout(1_100);
         await expect(this.locators.saveSpinner).toBeHidden({ timeout: 30_000 });
     }
 
     async expectReadOnlyPublicProject(): Promise<void> {
-        await expect(this.locators.readOnlyBadge).toBeVisible();
+        await this.projectView.showEditor();
+        if (this.projectView.isMobile()) {
+            await expect(this.locators.cloneProjectButton).toBeVisible();
+        } else {
+            await expect(this.locators.readOnlyBadge).toBeVisible();
+        }
         await expect(this.locators.addSegmentSelect).toBeHidden();
 
         const editorCount = await this.locators.segmentEditors.count();
@@ -370,7 +431,12 @@ export class EditorDsl {
     }
 
     async setPublicAccess(isPublic: boolean): Promise<void> {
-        await this.locators.shareButton.click();
+        if (await this.locators.shareButton.isVisible()) {
+            await this.locators.shareButton.click();
+        } else {
+            await this.locators.headerMenu.click();
+            await this.locators.shareMenuOption.click();
+        }
         const option = isPublic
             ? this.locators.publicAccessOption
             : this.locators.privateAccessOption;
@@ -401,5 +467,11 @@ export class EditorDsl {
                 return lines.join('\n');
             })
             .toBe(text);
+    }
+
+    private async focusSegment(editor: Locator): Promise<void> {
+        await this.projectView.showEditor();
+        await editor.scrollIntoViewIfNeeded();
+        await editor.click({ position: { x: 8, y: 8 } });
     }
 }

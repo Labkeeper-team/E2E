@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { EditorLocators } from './locators';
+import { ProjectViewDsl } from './project-view.dsl';
 
 const isCompilationResponse = (response: Response): boolean => {
     if (response.request().method() !== 'POST') {
@@ -20,11 +21,19 @@ export interface CompilationResult {
 export class CompilationDsl {
     private readonly locators: EditorLocators;
 
-    constructor(private readonly page: Page) {
+    constructor(
+        private readonly page: Page,
+        private readonly projectView: ProjectViewDsl
+    ) {
         this.locators = new EditorLocators(page);
     }
 
     async run(): Promise<CompilationResult> {
+        await this.projectView.showEditor();
+        if (await this.locators.autocompletePopup.isVisible()) {
+            await this.page.keyboard.press('Escape');
+            await expect(this.locators.autocompletePopup).toBeHidden();
+        }
         const responsePromise = this.page.waitForResponse(
             isCompilationResponse,
             { timeout: 60_000 }
@@ -32,7 +41,7 @@ export class CompilationDsl {
 
         await this.locators.runButton.click();
         const response = await responsePromise;
-        await expect(this.locators.enabledRunButton).toBeVisible({
+        await expect(this.locators.enabledRunButton).toBeAttached({
             timeout: 60_000,
         });
 

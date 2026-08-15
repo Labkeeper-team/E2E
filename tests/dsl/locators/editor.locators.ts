@@ -3,7 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 export type SegmentType =
     | 'Markdown'
     | 'Computation'
-    | 'Simple-math'
+    | 'Simple-formula'
     | 'Latex';
 
 export class EditorLocators {
@@ -91,10 +91,10 @@ export class EditorLocators {
         return this.segmentContainer(index).locator('.dropdown-menu-container');
     }
 
-    segmentDeleteOption(index: number): Locator {
-        return this.segmentContainer(index).getByText('Delete', {
-            exact: true,
-        });
+    segmentDeleteOption(): Locator {
+        return this.page
+            .locator('.dropdown-menu-content-container:visible')
+            .getByText('Delete', { exact: true });
     }
 
     get dividerButtons(): Locator {
@@ -141,6 +141,10 @@ export class EditorLocators {
         return this.page.locator('.run-button:not(.disabled)');
     }
 
+    get autocompletePopup(): Locator {
+        return this.page.locator('.cm-tooltip-autocomplete:visible');
+    }
+
     get settingsButton(): Locator {
         return this.page
             .locator('.code-settings-header-container .action-button')
@@ -148,8 +152,8 @@ export class EditorLocators {
     }
 
     projectTypeOption(type: 'markdown' | 'latex'): Locator {
-        return this.settingsButton
-            .locator('.project-settings-dropdown')
+        return this.page
+            .locator('.project-settings-dropdown:visible')
             .getByText(type, { exact: true });
     }
 
@@ -196,9 +200,15 @@ export class EditorLocators {
     }
 
     get readOnlyBadge(): Locator {
-        return this.page.getByText('readonly public project', {
-            exact: true,
-        });
+        return this.page
+            .locator('.project-pane--active')
+            .getByText('readonly public project', { exact: true });
+    }
+
+    get cloneProjectButton(): Locator {
+        return this.page
+            .locator('.project-pane--active')
+            .getByRole('button', { name: 'Clone', exact: true });
     }
 
     get projectTitleInput(): Locator {
@@ -215,6 +225,17 @@ export class EditorLocators {
 
     get shareButton(): Locator {
         return this.page.locator('.labkeeper_header__center .share-button');
+    }
+
+    get headerMenu(): Locator {
+        return this.page.locator('.header-menu-select .select-header');
+    }
+
+    get shareMenuOption(): Locator {
+        return this.page
+            .locator('.header-menu-select')
+            .getByRole('listitem')
+            .filter({ hasText: /^Share$/ });
     }
 
     get privateAccessOption(): Locator {

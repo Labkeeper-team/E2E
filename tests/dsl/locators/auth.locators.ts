@@ -29,17 +29,20 @@ export class AuthLocators {
         });
     }
 
-    accountMenu(email: string): Locator {
-        return this.page
-            .locator('.header-menu-select .selected-value')
-            .filter({ hasText: email });
+    get headerMenu(): Locator {
+        return this.page.locator('.header-menu-select .select-header');
     }
 
-    get currentAccountMenu(): Locator {
+    accountIdentity(email: string): Locator {
         return this.page
-            .locator('.header-menu-select .selected-value')
-            .filter({ hasText: /@/ })
-            .first();
+            .locator('.header-menu-select')
+            .getByText(email, { exact: true });
+    }
+
+    get authenticatedMenuMarker(): Locator {
+        return this.page
+            .locator('.header-menu-select')
+            .getByText('Log out', { exact: true });
     }
 
     get logoutOption(): Locator {

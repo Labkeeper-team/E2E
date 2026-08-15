@@ -12,7 +12,7 @@ test.describe('Anonymous editor', () => {
         await app.openAnonymousEditor();
 
         await app.editor.addSegment('Computation', 'computation');
-        await app.editor.addSegment('Simple-math', 'asciimath');
+        await app.editor.addSegment('Simple-formula', 'asciimath');
         await app.editor.addSegmentBetween(0, 'Markdown', 'markdown');
         await app.editor.addSegmentBetween(1, 'Latex', '\\text{latex}');
 
