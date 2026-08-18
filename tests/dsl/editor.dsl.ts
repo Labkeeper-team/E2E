@@ -2,6 +2,8 @@ import { expect, type Locator, type Page } from '@playwright/test';
 import { EditorLocators, type SegmentType } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
+const SEGMENT_INPUT_ATTEMPTS = 3;
+
 export class EditorDsl {
     private readonly locators: EditorLocators;
 
@@ -72,17 +74,47 @@ export class EditorDsl {
     }
 
     async fillSegment(index: number, text: string): Promise<void> {
-        const editor = this.locators.segmentEditor(index);
-        await this.focusSegment(editor);
-        await editor.fill(text);
-        await this.expectSegmentText(index, text);
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < SEGMENT_INPUT_ATTEMPTS; attempt += 1) {
+            try {
+                const editor = this.locators.segmentEditor(index);
+                await this.focusSegment(index, editor);
+                if (attempt === 1) {
+                    await editor.fill(text);
+                } else {
+                    await editor.press('Control+a');
+                    await editor.press('Backspace');
+                    await this.expectStableSegmentText(index, '');
+
+                    if (text) {
+                        await this.focusSegment(index, editor);
+                        await this.page.keyboard.insertText(text);
+                    }
+                }
+
+                await this.expectSegmentText(
+                    index,
+                    text,
+                    attempt < SEGMENT_INPUT_ATTEMPTS - 1 ? 5_000 : 15_000
+                );
+                return;
+            } catch (error) {
+                lastError = error;
+                if (attempt < SEGMENT_INPUT_ATTEMPTS - 1) {
+                    await this.page.waitForTimeout(250);
+                }
+            }
+        }
+
+        throw lastError;
     }
 
     async appendToSegment(index: number, text: string): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await this.focusSegment(editor);
+        await this.focusSegment(index, editor);
         await editor.press('Control+End');
-        await editor.pressSequentially(text);
+        await this.page.keyboard.insertText(text);
     }
 
     async deleteCharactersFromEnd(
@@ -90,7 +122,7 @@ export class EditorDsl {
         characterCount: number
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await this.focusSegment(editor);
+        await this.focusSegment(index, editor);
         await editor.press('Control+End');
 
         for (let count = 0; count < characterCount; count += 1) {
@@ -100,9 +132,10 @@ export class EditorDsl {
 
     async selectAllAndDelete(index: number): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await this.focusSegment(editor);
-        await editor.press('Control+a');
-        await editor.press('Backspace');
+        await this.focusSegment(index, editor);
+        await editor.selectText();
+        await this.page.keyboard.press('Backspace');
+        await this.expectSegmentText(index, '');
     }
 
     async selectPreviousCharactersAndDelete(
@@ -110,7 +143,7 @@ export class EditorDsl {
         characterCount: number
     ): Promise<void> {
         const editor = this.locators.segmentEditor(index);
-        await this.focusSegment(editor);
+        await this.focusSegment(index, editor);
         await editor.press('Control+End');
         await this.page.keyboard.down('Shift');
 
@@ -458,20 +491,43 @@ export class EditorDsl {
         await this.page.keyboard.press('Escape');
     }
 
-    private async expectSegmentText(index: number, text: string): Promise<void> {
+    private async expectSegmentText(
+        index: number,
+        text: string,
+        timeout = 15_000
+    ): Promise<void> {
         await expect
-            .poll(async () => {
-                const lines = await this.locators
-                    .segmentLines(index)
-                    .allTextContents();
-                return lines.join('\n');
-            })
+            .poll(
+                async () => {
+                    const lines = await this.locators
+                        .segmentLines(index)
+                        .allTextContents();
+                    return lines.join('\n');
+                },
+                { timeout }
+            )
             .toBe(text);
     }
 
-    private async focusSegment(editor: Locator): Promise<void> {
+    private async expectStableSegmentText(
+        index: number,
+        text: string
+    ): Promise<void> {
+        await this.expectSegmentText(index, text, 5_000);
+        await this.page.waitForTimeout(100);
+        await this.expectSegmentText(index, text, 5_000);
+    }
+
+    private async focusSegment(index: number, editor: Locator): Promise<void> {
         await this.projectView.showEditor();
+        await expect(editor).toBeEditable({ timeout: 30_000 });
         await editor.scrollIntoViewIfNeeded();
-        await editor.click({ position: { x: 8, y: 8 } });
+        await editor.focus();
+        await expect(this.locators.segmentCodeMirror(index)).toHaveClass(
+            /cm-focused/
+        );
+        await expect(this.locators.segmentContainer(index)).toHaveClass(
+            /is-active/
+        );
     }
 }
