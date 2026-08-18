@@ -34,6 +34,7 @@ export class CompilationDsl {
             await this.page.keyboard.press('Escape');
             await expect(this.locators.autocompletePopup).toBeHidden();
         }
+        await this.waitForSaved();
         const responsePromise = this.page.waitForResponse(
             isCompilationResponse,
             { timeout: 60_000 }
@@ -49,6 +50,16 @@ export class CompilationDsl {
             status: response.status(),
             url: response.url(),
         };
+    }
+
+    private async waitForSaved(): Promise<void> {
+        await expect(this.locators.saveStatus).toBeVisible({
+            timeout: 30_000,
+        });
+        await this.page.waitForTimeout(1_100);
+        await expect(this.locators.saveSpinner).toBeHidden({
+            timeout: 30_000,
+        });
     }
 
     async runSuccessfully(): Promise<void> {
