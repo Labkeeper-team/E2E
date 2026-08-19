@@ -5,4 +5,4 @@ WORKDIR /app
 COPY package.json package-lock.json playwright.config.ts /app/
 
 RUN npm ci \
-    && npx playwright install msedge chrome
+    && npx playwright install msedge chrome webkit firefox
