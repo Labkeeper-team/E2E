@@ -5,6 +5,7 @@ import { CompilationDsl } from './compilation.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
 import { NavigationDsl } from './navigation.dsl';
+import { ProjectViewDsl } from './project-view.dsl';
 import {
     ProjectListUnauthorizedError,
     ProjectsDsl,
@@ -25,14 +26,16 @@ export class LabkeeperDsl {
         private readonly page: Page,
         testInfo: TestInfo
     ) {
+        const projectView = new ProjectViewDsl(page);
+
         this.access = new AccessDsl(page);
         this.auth = new AuthDsl(page);
-        this.compilation = new CompilationDsl(page);
-        this.editor = new EditorDsl(page);
-        this.files = new FileManagerDsl(page);
+        this.compilation = new CompilationDsl(page, projectView);
+        this.editor = new EditorDsl(page, projectView);
+        this.files = new FileManagerDsl(page, projectView);
         this.navigation = new NavigationDsl(page);
         this.projects = new ProjectsDsl(page, testInfo);
-        this.results = new ResultDsl(page);
+        this.results = new ResultDsl(page, projectView);
     }
 
     async openAnonymousEditor(): Promise<void> {

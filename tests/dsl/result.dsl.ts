@@ -1,14 +1,19 @@
 import { expect, type Page } from '@playwright/test';
 import { ResultLocators } from './locators';
+import { ProjectViewDsl } from './project-view.dsl';
 
 export class ResultDsl {
     private readonly locators: ResultLocators;
 
-    constructor(private readonly page: Page) {
+    constructor(
+        private readonly page: Page,
+        private readonly projectView: ProjectViewDsl
+    ) {
         this.locators = new ResultLocators(page);
     }
 
     async expectPdf(): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.visibleCanvas.first()).toBeVisible({
             timeout: 60_000,
         });
@@ -47,6 +52,7 @@ export class ResultDsl {
         pageNumber: number,
         name: string
     ): Promise<void> {
+        await this.projectView.showPdf();
         const canvas = this.locators.pdfPageCanvas(pageNumber);
         await expect(canvas).toBeVisible({ timeout: 60_000 });
         const encodedPng = await canvas.evaluate((element) => {
@@ -74,6 +80,7 @@ export class ResultDsl {
     }
 
     async expectPdfScrolledToText(text: string): Promise<void> {
+        await this.projectView.showPdf();
         const target = this.locators.pdfText(text);
         await expect(target).toBeVisible({ timeout: 60_000 });
         await expect
@@ -100,6 +107,7 @@ export class ResultDsl {
     }
 
     async selectPdfText(text: string): Promise<void> {
+        await this.projectView.showPdf();
         const target = this.locators.pdfText(text);
         await expect(target).toBeVisible({ timeout: 60_000 });
         const box = await target.boundingBox();
@@ -107,18 +115,21 @@ export class ResultDsl {
         await target.click({
             position: {
                 x: Math.max(1, (box?.width ?? 2) / 2),
-                y: Math.max(1, (box?.height ?? 2) - 1),
+                y: Math.max(1, (box?.height ?? 2) / 2),
             },
         });
+        await this.page.waitForTimeout(250);
     }
 
     async expectMarkdownText(text: string | RegExp): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.markdown.getByText(text)).toBeVisible({
             timeout: 30_000,
         });
     }
 
     async expectPlot(title?: string | RegExp): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.plot).toBeVisible({ timeout: 30_000 });
         await expect(this.locators.plotGraphic).toBeVisible({
             timeout: 30_000,
@@ -141,25 +152,30 @@ export class ResultDsl {
     }
 
     async matchPlotSnapshot(name: string): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.plot).toHaveScreenshot(name);
     }
 
     async expectPlotGrid(): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.plotGridLines.first()).toBeAttached();
     }
 
     async expectTable(): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.resultTables.first()).toBeVisible({
             timeout: 30_000,
         });
     }
 
     async expectPdfExportAvailable(): Promise<void> {
+        await this.projectView.showPdf();
         await expect(this.locators.saveToPdfButton).toBeVisible();
         await expect(this.locators.saveToPdfButton).toBeEnabled();
     }
 
     async openProblems(): Promise<void> {
+        await this.projectView.showEditor();
         const currentClass =
             (await this.locators.problemsList.getAttribute('class')) || '';
 
@@ -173,10 +189,12 @@ export class ResultDsl {
     }
 
     async expectProblemCount(count: number): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.locators.problemsHeader).toContainText(`(${count})`);
     }
 
     async closeProblemsWithEscape(): Promise<void> {
+        await this.projectView.showEditor();
         await this.page.keyboard.press('Escape');
         await expect(this.locators.problemsList).not.toHaveClass(
             /problem-list-container-expanded/

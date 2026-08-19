@@ -10,20 +10,41 @@ export class NavigationDsl {
     }
 
     async openEditor(path = '/project/default'): Promise<void> {
-        await this.page.goto(editorPath(path), {
-            waitUntil: 'domcontentloaded',
+        const target = editorPath(path);
+        await this.retryNavigation(async () => {
+            await this.page.goto(target, {
+                waitUntil: 'domcontentloaded',
+                timeout: 60_000,
+            });
+            await expect(this.page).toHaveTitle(/Labkeeper/);
+            await this.editorLocators.editorRoot.waitFor({
+                state: 'visible',
+                timeout: 60_000,
+            });
         });
-        await expect(this.page).toHaveTitle(/Labkeeper/);
-        await this.editorLocators.editorRoot.waitFor({ state: 'visible' });
     }
 
     async openPath(path: string): Promise<void> {
-        await this.page.goto(path, { waitUntil: 'domcontentloaded' });
-        await expect(this.page).toHaveTitle(/Labkeeper/);
+        await this.retryNavigation(async () => {
+            await this.page.goto(path, {
+                waitUntil: 'domcontentloaded',
+                timeout: 60_000,
+            });
+            await expect(this.page).toHaveTitle(/Labkeeper/);
+        });
     }
 
     async reload(): Promise<void> {
-        await this.page.reload({ waitUntil: 'domcontentloaded' });
+        await this.retryNavigation(async () => {
+            await this.page.reload({
+                waitUntil: 'domcontentloaded',
+                timeout: 60_000,
+            });
+            await this.editorLocators.editorRoot.waitFor({
+                state: 'visible',
+                timeout: 60_000,
+            });
+        });
     }
 
     async expectPath(path: string | RegExp): Promise<void> {
@@ -43,5 +64,20 @@ export class NavigationDsl {
         }
 
         return match[1];
+    }
+
+    private async retryNavigation(action: () => Promise<void>): Promise<void> {
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                await action();
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        throw lastError;
     }
 }

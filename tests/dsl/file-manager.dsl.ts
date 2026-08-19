@@ -1,33 +1,48 @@
 import { expect, type Page } from '@playwright/test';
 import { EditorLocators, FileManagerLocators } from './locators';
+import { ProjectViewDsl } from './project-view.dsl';
 
 export class FileManagerDsl {
     private readonly editor: EditorLocators;
     private readonly files: FileManagerLocators;
 
-    constructor(private readonly page: Page) {
+    constructor(
+        private readonly page: Page,
+        private readonly projectView: ProjectViewDsl
+    ) {
         this.editor = new EditorLocators(page);
         this.files = new FileManagerLocators(page);
     }
 
     async open(): Promise<void> {
-        await this.editor.fileManagerButton.click();
+        if (this.projectView.isMobile()) {
+            await this.projectView.showFiles();
+        } else {
+            await this.editor.fileManagerButton.click();
+        }
         await expect(this.files.panel).toBeVisible();
         await expect(this.files.loadingSpinner).toBeHidden({ timeout: 30_000 });
         await expect(this.files.tree).toBeVisible({ timeout: 30_000 });
     }
 
     async close(): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.closeButton.click();
         await expect(this.files.panel).toBeHidden();
     }
 
-    async closeWithEscape(): Promise<void> {
-        await this.page.keyboard.press('Escape');
+    async closeFromStack(): Promise<void> {
+        await this.projectView.showFiles();
+        if (this.projectView.isMobile()) {
+            await this.files.closeButton.click();
+        } else {
+            await this.page.keyboard.press('Escape');
+        }
         await expect(this.files.panel).toBeHidden();
     }
 
     async uploadTextFile(name: string, contents: string): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.uploadInput.setInputFiles({
             name,
             mimeType: 'text/plain',
@@ -39,6 +54,7 @@ export class FileManagerDsl {
     }
 
     async createFile(expectedName = 'new.txt'): Promise<void> {
+        await this.projectView.showFiles();
         const responsePromise = this.waitForFileMutation('PUT', 'upload');
         await this.files.createFileButton.click();
         expect((await responsePromise).ok()).toBeTruthy();
@@ -48,6 +64,7 @@ export class FileManagerDsl {
     }
 
     async renameFile(currentName: string, newName: string): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.fileMenuButton(currentName).click();
         await this.files.visibleEditMenuItem.click();
         await expect(this.files.editingNameInput).toBeVisible();
@@ -63,7 +80,9 @@ export class FileManagerDsl {
     }
 
     async openTextFile(name: string): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.fileRow(name).click();
+        await this.projectView.showEditor();
         await expect(this.files.textFileEditor).toBeVisible({
             timeout: 30_000,
         });
@@ -74,6 +93,7 @@ export class FileManagerDsl {
     }
 
     async editOpenTextFile(contents: string): Promise<void> {
+        await this.projectView.showEditor();
         const responsePromise = this.waitForFileMutation('PUT', 'upload');
         await this.files.textFileEditorContent.fill(contents);
         expect((await responsePromise).ok()).toBeTruthy();
@@ -84,11 +104,14 @@ export class FileManagerDsl {
     }
 
     async closeTextFile(): Promise<void> {
+        await this.projectView.showEditor();
         await this.files.closeTextFileEditorButton.click();
         await expect(this.files.textFileEditor).toBeHidden();
+        await this.projectView.showFiles();
     }
 
     async expectOpenTextFileContents(contents: string): Promise<void> {
+        await this.projectView.showEditor();
         await expect
             .poll(async () => {
                 const lines = await this.files.textFileEditorLines.allTextContents();
@@ -98,6 +121,7 @@ export class FileManagerDsl {
     }
 
     async expectLatexSyntaxHighlighting(): Promise<void> {
+        await this.projectView.showEditor();
         await expect(this.files.textFileSyntaxTokens.first()).toBeVisible();
         const tokens = await this.files.textFileSyntaxTokens.evaluateAll(
             (elements) =>
@@ -116,6 +140,7 @@ export class FileManagerDsl {
     }
 
     async createFolder(name: string): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.createFolderButton.click();
         await expect(this.files.creatingFolderInput).toBeVisible();
         await this.files.creatingFolderInput.fill(name);
@@ -124,10 +149,12 @@ export class FileManagerDsl {
     }
 
     async selectRootFolder(): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.rootFolderRow.click();
     }
 
     async renameFolder(currentName: string, newName: string): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.folderRow(currentName).hover();
         await this.files.folderEditButton(currentName).click();
         await expect(this.files.editingNameInput).toBeVisible();
@@ -143,6 +170,7 @@ export class FileManagerDsl {
     }
 
     async deleteFolder(name: string): Promise<void> {
+        await this.projectView.showFiles();
         const responsePromise = this.waitForFolderMutation('DELETE', 'delete');
         await this.files.folderRow(name).hover();
         await this.files.folderDeleteButton(name).click();
@@ -156,6 +184,7 @@ export class FileManagerDsl {
         name: string,
         contents: string
     ): Promise<void> {
+        await this.projectView.showFiles();
         const dataTransfer = await this.page.evaluateHandle(
             ({ fileName, fileContents }) => {
                 const transfer = new DataTransfer();
@@ -197,6 +226,7 @@ export class FileManagerDsl {
     }
 
     async expectFile(name: string): Promise<void> {
+        await this.projectView.showFiles();
         await expect(this.files.fileRow(name)).toBeVisible({
             timeout: 30_000,
         });
@@ -206,6 +236,7 @@ export class FileManagerDsl {
         folderName: string,
         fileName: string
     ): Promise<void> {
+        await this.projectView.showFiles();
         await expect(this.files.folderRow(folderName)).toBeVisible({
             timeout: 30_000,
         });
@@ -218,10 +249,12 @@ export class FileManagerDsl {
     }
 
     async expectFileMissing(name: string): Promise<void> {
+        await this.projectView.showFiles();
         await expect(this.files.fileRow(name)).toHaveCount(0);
     }
 
     async uploadOversizedFile(): Promise<void> {
+        await this.projectView.showFiles();
         const maximumSize = 10 * 1024 * 1024;
         await this.files.uploadInput.setInputFiles({
             name: 'oversized-e2e.csv',
@@ -235,6 +268,7 @@ export class FileManagerDsl {
     }
 
     async uploadFileWithExpiredSession(): Promise<void> {
+        await this.projectView.showFiles();
         await this.files.uploadInput.setInputFiles({
             name: 'expired-session.txt',
             mimeType: 'text/plain',
@@ -247,6 +281,7 @@ export class FileManagerDsl {
     }
 
     async expectGeneratedCsv(): Promise<void> {
+        await this.projectView.showFiles();
         await expect(this.files.generatedCsvFiles.first()).toBeVisible({
             timeout: 30_000,
         });

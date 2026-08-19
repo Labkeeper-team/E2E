@@ -23,7 +23,7 @@ test.describe('Files and editor panels', () => {
         await app.files.expectGeneratedCsv();
     });
 
-    test('closes stacked panels with Escape in the expected order @authenticated', async ({
+    test('closes stacked panels in the expected order @authenticated', async ({
         app,
     }) => {
         await app.openAuthenticatedEditor();
@@ -41,6 +41,6 @@ test.describe('Files and editor panels', () => {
 
         await app.editor.closeSearchWithEscape();
         await app.results.closeProblemsWithEscape();
-        await app.files.closeWithEscape();
+        await app.files.closeFromStack();
     });
 });

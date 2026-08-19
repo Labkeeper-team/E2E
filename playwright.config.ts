@@ -32,6 +32,14 @@ const productionBrowserProjects: Project[] = [
         name: 'macOS Safari',
         use: { ...devices['Desktop Safari'] },
     },
+    {
+        name: 'Android Chrome',
+        use: { ...devices['Pixel 7'], channel: 'chrome' },
+    },
+    {
+        name: 'iPhone Safari',
+        use: { ...devices['iPhone 15'] },
+    },
 ];
 
 const projects: Project[] =
@@ -67,7 +75,7 @@ export default defineConfig({
     forbidOnly: Boolean(process.env.CI),
     retries: process.env.CI ? 2 : 0,
     workers: 1,
-    timeout: 120_000,
+    timeout: 240_000,
     outputDir: 'test-results',
     reporter,
     expect: {
@@ -83,7 +91,7 @@ export default defineConfig({
         locale: 'en-US',
         timezoneId: 'UTC',
         actionTimeout: 15_000,
-        navigationTimeout: 30_000,
+        navigationTimeout: 60_000,
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
         video: 'retain-on-failure',

@@ -139,7 +139,10 @@ test.describe('Old user LaTeX scenarios', () => {
 
         await test.step('navigates from the selected PDF position back to the source line', async () => {
             await app.results.selectPdfText('sync target');
-            await app.editor.navigatePdfSelectionToSource();
+            await app.editor.navigatePdfSelectionToSource({
+                segmentIndex: bodySegment,
+                line: 5,
+            });
             await app.editor.expectCursorNearSegmentLine(bodySegment, 5);
         });
     });

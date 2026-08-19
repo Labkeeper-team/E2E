@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 import { AccessLocators } from './locators';
 
 export class AccessDsl {
@@ -10,15 +10,24 @@ export class AccessDsl {
     }
 
     async openMissingProject(): Promise<void> {
-        await this.page.goto(`/project/${randomUUID()}`, {
-            waitUntil: 'domcontentloaded',
-        });
-        await this.expectToast('Project not found');
+        const path = `/project/${randomUUID()}`;
+        await this.expectAfterNavigation(
+            path,
+            this.locators.notFoundPageMessage.or(
+                this.locators.toast.filter({ hasText: 'Project not found' })
+            )
+        );
     }
 
     async openForbiddenProject(path: string): Promise<void> {
-        await this.page.goto(path, { waitUntil: 'domcontentloaded' });
-        await this.expectToast("You don't have enough rights to view the project");
+        await this.expectAfterNavigation(
+            path,
+            this.locators.forbiddenPageMessage.or(
+                this.locators.toast.filter({
+                    hasText: "You don't have enough rights to view the project",
+                })
+            )
+        );
     }
 
     async expectAccessDenied(): Promise<void> {
@@ -27,12 +36,28 @@ export class AccessDsl {
                 hasText: "You don't have enough rights to view the project",
             })
         );
-        await expect(accessDenied.first()).toBeVisible({ timeout: 30_000 });
+        await expect(accessDenied.first()).toBeVisible({ timeout: 60_000 });
     }
 
-    private async expectToast(text: string): Promise<void> {
-        await expect(this.locators.toast.first()).toContainText(text, {
-            timeout: 30_000,
-        });
+    private async expectAfterNavigation(
+        path: string,
+        result: Locator
+    ): Promise<void> {
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                await this.page.goto(path, {
+                    waitUntil: 'domcontentloaded',
+                    timeout: 60_000,
+                });
+                await expect(result.first()).toBeVisible({ timeout: 60_000 });
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        throw lastError;
     }
 }

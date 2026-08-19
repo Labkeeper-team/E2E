@@ -11,6 +11,8 @@
     "test:edge": "playwright test --project=Microsoft Edge",
     "test:firefox": "playwright test --project=Windows Firefox",
     "test:safari": "playwright test --project=macOS Safari",
+    "test:android": "playwright test --project=Android Chrome",
+    "test:iphone": "playwright test --project=iPhone Safari",
     "test:scenarios": "playwright test tests/scenarios",
     "test:local": "E2E_BROWSER=chromium playwright test",
     "test:list": "playwright test --list",

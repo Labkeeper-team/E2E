@@ -13,4 +13,8 @@ export class AccessLocators {
             { exact: true }
         );
     }
+
+    get notFoundPageMessage(): Locator {
+        return this.page.getByText('Project not found', { exact: true });
+    }
 }
