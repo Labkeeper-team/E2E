@@ -90,7 +90,7 @@ export class FileManagerLocators {
     }
 
     get visibleEditMenuItem(): Locator {
-        return this.panel
+        return this.page
             .locator('.tree-menu-item:visible')
             .filter({ hasText: /^Edit$/ });
     }
