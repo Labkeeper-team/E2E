@@ -98,8 +98,7 @@ export class ProjectsDsl {
         const requestedName = this.uniqueProjectName(label);
 
         await this.openList();
-        await this.locators.addProjectButton.click();
-        await this.locators.addProjectModal.waitFor({ state: 'visible' });
+        await this.openAddProjectModal();
         await this.locators.projectNameInput.fill(requestedName);
         const name = await this.locators.projectNameInput.inputValue();
         const projectTypeOption = this.locators.projectTypeOption(type);
@@ -131,6 +130,27 @@ export class ProjectsDsl {
         });
 
         return { id, name, path };
+    }
+
+    private async openAddProjectModal(): Promise<void> {
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                if (!(await this.locators.addProjectModal.isVisible())) {
+                    await this.locators.addProjectButton.click();
+                }
+                await this.locators.addProjectModal.waitFor({
+                    state: 'visible',
+                    timeout: 5_000,
+                });
+                return;
+            } catch (error) {
+                lastError = error;
+            }
+        }
+
+        throw lastError;
     }
 
     async openProjectFromList(title: string): Promise<void> {

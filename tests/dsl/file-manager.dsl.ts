@@ -2,9 +2,12 @@ import { expect, type Page } from '@playwright/test';
 import { EditorLocators, FileManagerLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
+const TEXT_FILE_INPUT_ATTEMPTS = 3;
+
 export class FileManagerDsl {
     private readonly editor: EditorLocators;
     private readonly files: FileManagerLocators;
+    private openTextFileName?: string;
 
     constructor(
         private readonly page: Page,
@@ -55,12 +58,15 @@ export class FileManagerDsl {
 
     async createFile(expectedName = 'new.txt'): Promise<void> {
         await this.projectView.showFiles();
-        const responsePromise = this.waitForFileMutation('PUT', 'upload');
+        const responsePromise = this.waitForFileMutation('PUT', 'upload', {
+            name: expectedName,
+        });
         await this.files.createFileButton.click();
         expect((await responsePromise).ok()).toBeTruthy();
         await expect(this.files.fileRow(expectedName)).toBeVisible({
             timeout: 30_000,
         });
+        this.openTextFileName = expectedName;
     }
 
     async renameFile(currentName: string, newName: string): Promise<void> {
@@ -77,6 +83,9 @@ export class FileManagerDsl {
             timeout: 30_000,
         });
         await expect(this.files.fileRow(currentName)).toHaveCount(0);
+        if (this.openTextFileName === currentName) {
+            this.openTextFileName = newName;
+        }
     }
 
     async openTextFile(name: string): Promise<void> {
@@ -90,12 +99,23 @@ export class FileManagerDsl {
         await expect(this.files.textFileEditorContent).toBeVisible({
             timeout: 30_000,
         });
+        this.openTextFileName = name;
     }
 
     async editOpenTextFile(contents: string): Promise<void> {
         await this.projectView.showEditor();
-        const responsePromise = this.waitForFileMutation('PUT', 'upload');
-        await this.files.textFileEditorContent.fill(contents);
+        if (!this.openTextFileName) {
+            throw new Error('No text file is open for editing');
+        }
+        const responsePromise = this.waitForFileMutation('PUT', 'upload', {
+            name: this.openTextFileName,
+        });
+        try {
+            await this.fillOpenTextFile(contents);
+        } catch (error) {
+            void responsePromise.catch(() => undefined);
+            throw error;
+        }
         expect((await responsePromise).ok()).toBeTruthy();
         await expect(this.files.textFileSaveSpinner).toBeHidden({
             timeout: 30_000,
@@ -107,16 +127,24 @@ export class FileManagerDsl {
         await this.projectView.showEditor();
         await this.files.closeTextFileEditorButton.click();
         await expect(this.files.textFileEditor).toBeHidden();
+        this.openTextFileName = undefined;
         await this.projectView.showFiles();
     }
 
-    async expectOpenTextFileContents(contents: string): Promise<void> {
+    async expectOpenTextFileContents(
+        contents: string,
+        timeout = 15_000
+    ): Promise<void> {
         await this.projectView.showEditor();
         await expect
-            .poll(async () => {
-                const lines = await this.files.textFileEditorLines.allTextContents();
-                return lines.join('\n');
-            })
+            .poll(
+                async () => {
+                    const lines =
+                        await this.files.textFileEditorLines.allTextContents();
+                    return lines.join('\n');
+                },
+                { timeout }
+            )
             .toBe(contents);
     }
 
@@ -145,7 +173,9 @@ export class FileManagerDsl {
         await expect(this.files.creatingFolderInput).toBeVisible();
         await this.files.creatingFolderInput.fill(name);
         await this.files.creatingFolderInput.press('Enter');
-        await expect(this.files.folderRow(name)).toBeVisible();
+        const folder = this.files.folderRow(name);
+        await expect(folder).toBeVisible();
+        await expect(folder).toHaveClass(/tree-row-selected/);
     }
 
     async selectRootFolder(): Promise<void> {
@@ -211,7 +241,9 @@ export class FileManagerDsl {
                 })
                 .toContain('file-tree-root-drop-zone-active');
 
-            const responsePromise = this.waitForFileMutation('PUT', 'upload');
+            const responsePromise = this.waitForFileMutation('PUT', 'upload', {
+                name,
+            });
             await this.files.rootFolderRow.dispatchEvent('drop', {
                 dataTransfer,
             });
@@ -287,13 +319,82 @@ export class FileManagerDsl {
         });
     }
 
-    private waitForFileMutation(method: string, operation: string) {
+    private async fillOpenTextFile(contents: string): Promise<void> {
+        let lastError: unknown;
+
+        for (let attempt = 0; attempt < TEXT_FILE_INPUT_ATTEMPTS; attempt += 1) {
+            try {
+                const editor = this.files.textFileEditorContent;
+                await expect(editor).toBeEditable({ timeout: 30_000 });
+                await editor.focus();
+
+                if (attempt === 1) {
+                    await editor.fill(contents);
+                } else {
+                    await editor.press('Control+a');
+                    await editor.press('Backspace');
+                    await this.expectStableOpenTextFileContents('');
+
+                    if (contents) {
+                        await editor.focus();
+                        await this.page.keyboard.insertText(contents);
+                    }
+                }
+
+                await this.expectStableOpenTextFileContents(
+                    contents,
+                    attempt < TEXT_FILE_INPUT_ATTEMPTS - 1 ? 5_000 : 15_000
+                );
+                return;
+            } catch (error) {
+                lastError = error;
+                if (attempt < TEXT_FILE_INPUT_ATTEMPTS - 1) {
+                    await this.page.waitForTimeout(250);
+                }
+            }
+        }
+
+        throw lastError;
+    }
+
+    private async expectStableOpenTextFileContents(
+        contents: string,
+        timeout = 5_000
+    ): Promise<void> {
+        await this.expectOpenTextFileContents(contents, timeout);
+        await this.page.waitForTimeout(100);
+        await this.expectOpenTextFileContents(contents, timeout);
+    }
+
+    private waitForFileMutation(
+        method: string,
+        operation: string,
+        expected?: { name?: string }
+    ) {
         return this.page.waitForResponse(
-            (response) =>
-                response.request().method() === method &&
-                new RegExp(
-                    `/api/v\\d+/public/project/[^/]+/file/${operation}$`
-                ).test(new URL(response.url()).pathname),
+            (response) => {
+                if (
+                    response.request().method() !== method ||
+                    !new RegExp(
+                        `/api/v\\d+/public/project/[^/]+/file/${operation}$`
+                    ).test(new URL(response.url()).pathname)
+                ) {
+                    return false;
+                }
+
+                const url = new URL(response.url());
+                if (expected?.name) {
+                    const requestName = url.searchParams
+                        .get('name')
+                        ?.split('/')
+                        .pop();
+                    if (requestName !== expected.name) {
+                        return false;
+                    }
+                }
+
+                return true;
+            },
             { timeout: 30_000 }
         );
     }
