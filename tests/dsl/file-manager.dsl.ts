@@ -148,6 +148,24 @@ export class FileManagerDsl {
             .toBe(contents);
     }
 
+    async expectOpenTextFileContainsText(text: string): Promise<void> {
+        await this.projectView.showEditor();
+        await expect(this.files.textFileEditorContent).toContainText(text);
+    }
+
+    async waitForOpenTextFileSaved(): Promise<void> {
+        await this.projectView.showEditor();
+        if (!this.openTextFileName) {
+            throw new Error('No text file is open for editing');
+        }
+
+        await expect(this.files.textFileSaveStatus).toBeVisible();
+        await this.page.waitForTimeout(1_100);
+        await expect(this.files.textFileSaveSpinner).toBeHidden({
+            timeout: 30_000,
+        });
+    }
+
     async expectLatexSyntaxHighlighting(): Promise<void> {
         await this.projectView.showEditor();
         await expect(this.files.textFileSyntaxTokens.first()).toBeVisible();

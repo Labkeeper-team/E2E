@@ -2,6 +2,7 @@ import type { Page, TestInfo } from '@playwright/test';
 import { AccessDsl } from './access.dsl';
 import { AuthDsl } from './auth.dsl';
 import { CompilationDsl } from './compilation.dsl';
+import { EditorPerformanceDsl } from './editor-performance.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
 import { NavigationDsl } from './navigation.dsl';
@@ -19,6 +20,7 @@ export class LabkeeperDsl {
     readonly editor: EditorDsl;
     readonly files: FileManagerDsl;
     readonly navigation: NavigationDsl;
+    readonly performance: EditorPerformanceDsl;
     readonly projects: ProjectsDsl;
     readonly results: ResultDsl;
 
@@ -35,6 +37,15 @@ export class LabkeeperDsl {
         this.files = new FileManagerDsl(page, projectView);
         this.navigation = new NavigationDsl(page);
         this.projects = new ProjectsDsl(page, testInfo);
+        this.performance = new EditorPerformanceDsl(
+            page,
+            testInfo,
+            projectView,
+            this.editor,
+            this.files,
+            this.navigation,
+            this.projects
+        );
         this.results = new ResultDsl(page, projectView);
     }
 

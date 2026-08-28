@@ -8,6 +8,11 @@ import { ProjectLocators } from './locators';
 
 export type ProjectType = 'Markdown' | 'LaTeX';
 
+export interface ManagedProjectSegment {
+    type: 'md' | 'computational' | 'latex' | 'asciimath';
+    text: string;
+}
+
 export class ProjectListUnauthorizedError extends Error {
     constructor() {
         super('Project list request returned 401');
@@ -18,6 +23,7 @@ export class ProjectListUnauthorizedError extends Error {
 export class ProjectsDsl {
     private readonly locators: ProjectLocators;
     private readonly managedProjectsById = new Map<string, Set<string>>();
+    private apiBasePath?: string;
     private sequence = 0;
 
     constructor(
@@ -114,7 +120,9 @@ export class ProjectsDsl {
             { timeout: 30_000 }
         );
         await this.locators.createProjectButton.click();
-        expect((await createResponsePromise).ok()).toBeTruthy();
+        const createResponse = await createResponsePromise;
+        expect(createResponse.ok()).toBeTruthy();
+        this.rememberApiBasePath(createResponse.url());
         await expect(this.page).toHaveURL(/\/project\/[A-Za-z0-9_-]+$/);
 
         const path = new URL(this.page.url()).pathname;
@@ -130,6 +138,41 @@ export class ProjectsDsl {
         });
 
         return { id, name, path };
+    }
+
+    async replaceManagedProjectProgram(
+        id: string,
+        segments: ManagedProjectSegment[]
+    ): Promise<void> {
+        if (!this.managedProjectsById.has(id)) {
+            throw new Error(
+                `Program setup refused unmanaged project ${id}`
+            );
+        }
+        if (!this.apiBasePath) {
+            throw new Error('Project API version was not discovered');
+        }
+
+        const endpoint = new URL(
+            `${this.apiBasePath}/public/project/${encodeURIComponent(id)}/program`,
+            this.page.url()
+        ).toString();
+        const response = await this.page.request.post(endpoint, {
+            maxRetries: 2,
+            data: {
+                segments: segments.map((segment, index) => ({
+                    ...segment,
+                    id: index + 1,
+                    parameters: { visible: true },
+                })),
+                parameters: { roundStrategy: 'noRound' },
+            },
+        });
+
+        expect(
+            response.ok(),
+            `Managed project program setup returned HTTP ${response.status()}`
+        ).toBeTruthy();
     }
 
     private async openAddProjectModal(): Promise<void> {
@@ -299,6 +342,15 @@ export class ProjectsDsl {
                 `Cleanup refused project outside ${input.projectPrefix} prefix`
             );
         }
+    }
+
+    private rememberApiBasePath(url: string): void {
+        const path = new URL(url).pathname;
+        const match = path.match(/^\/api\/v\d+/);
+        if (!match) {
+            throw new Error(`Could not discover API version from ${path}`);
+        }
+        this.apiBasePath = match[0];
     }
 
     private waitForTitleChangeResponse() {
