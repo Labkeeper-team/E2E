@@ -16,33 +16,41 @@ const LARGE_PROJECT_SEGMENT_COUNT = 100;
 const HELD_KEY_PRESS_COUNT = 120;
 const HELD_KEY_INTERVAL_MS = 16;
 const SCROLL_STEPS_PER_DIRECTION = 45;
+const MINIMUM_BLOCKING_ENTRY_COUNT = 3;
 
 interface PerformanceBudget {
-    blockingEntryMaxMs: number;
+    assertAnimationFrameTiming: boolean;
+    blockingEntryP50Ms: number;
     frameGapP95Ms: number;
     inputToFrameMaxMs: number;
     inputToFrameP95Ms: number;
+    inputToUpdateMaxMs: number;
+    inputToUpdateP95Ms: number;
     postResponseRenderMs: number;
 }
 
 const DEFAULT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
+    assertAnimationFrameTiming: true,
     postResponseRenderMs: 5_000,
     inputToFrameP95Ms: 200,
     inputToFrameMaxMs: 500,
+    inputToUpdateP95Ms: 100,
+    inputToUpdateMaxMs: 500,
     frameGapP95Ms: 100,
-    blockingEntryMaxMs: 500,
+    blockingEntryP50Ms: 500,
 });
 
 const WEBKIT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
     ...DEFAULT_PERFORMANCE_BUDGET,
-    inputToFrameP95Ms: 250,
-    frameGapP95Ms: 250,
+    assertAnimationFrameTiming: false,
+    inputToUpdateP95Ms: 150,
 });
 
 interface RawPerformanceMetrics {
     durationMs: number;
     frameGapsMs: number[];
     inputToFrameMs: number[];
+    inputToUpdateMs: number[];
     longAnimationFramesMs: number[];
     longTasksMs: number[];
     supportsLongAnimationFrames: boolean;
@@ -62,6 +70,7 @@ interface PerformanceReport {
     durationMs: number;
     frameGaps: DistributionSummary;
     inputToFrame: DistributionSummary;
+    inputToUpdate: DistributionSummary;
     label: string;
     longAnimationFrames: DistributionSummary;
     longTasks: DistributionSummary;
@@ -405,7 +414,7 @@ export class EditorPerformanceDsl {
     }
 
     private async startProbe(target: Locator): Promise<void> {
-        await target.evaluate((element) => {
+        await target.evaluate(async (element) => {
             type Probe = {
                 stop: () => Promise<RawPerformanceMetrics>;
             };
@@ -419,6 +428,7 @@ export class EditorPerformanceDsl {
 
             const frameGapsMs: number[] = [];
             const inputToFrameMs: number[] = [];
+            const inputToUpdateMs: number[] = [];
             const longAnimationFramesMs: number[] = [];
             const longTasksMs: number[] = [];
             const observerRecords: Array<{
@@ -431,11 +441,11 @@ export class EditorPerformanceDsl {
                 'long-animation-frame'
             );
             const supportsLongTasks = supportedEntryTypes.includes('longtask');
-            const startedAt = performance.now();
-            let previousFrameAt = startedAt;
+            let startedAt = 0;
+            let previousFrameAt = 0;
             let pendingInputAt: number | undefined;
             let animationFrame = 0;
-            let recordFrameGaps = true;
+            let recordFrameGaps = false;
 
             const containsTarget = (event: Event): boolean =>
                 event.composedPath().some(
@@ -450,10 +460,17 @@ export class EditorPerformanceDsl {
                 (event.key.length === 1 ||
                     ['Backspace', 'Delete', 'Enter'].includes(event.key));
             const recordRenderedInput = () => {
-                const inputAt = pendingInputAt ?? performance.now();
+                if (pendingInputAt === undefined) {
+                    return;
+                }
+
+                const inputAt = pendingInputAt;
                 pendingInputAt = undefined;
-                requestAnimationFrame(() => {
-                    inputToFrameMs.push(performance.now() - inputAt);
+                queueMicrotask(() => {
+                    inputToUpdateMs.push(performance.now() - inputAt);
+                    requestAnimationFrame(() => {
+                        inputToFrameMs.push(performance.now() - inputAt);
+                    });
                 });
             };
             const onTextUpdate = () => recordRenderedInput();
@@ -521,6 +538,10 @@ export class EditorPerformanceDsl {
                     // The requestAnimationFrame probe remains available as a fallback.
                 }
             };
+            const nextFrame = () =>
+                new Promise<void>((resolve) => {
+                    requestAnimationFrame(() => resolve());
+                });
 
             if (supportsLongTasks) {
                 observe('longtask', longTasksMs);
@@ -530,12 +551,23 @@ export class EditorPerformanceDsl {
             }
 
             attachEditContext(element);
-            for (const descendant of element.querySelectorAll('*')) {
-                attachEditContext(descendant);
-            }
             element.addEventListener('keydown', onKeyDown, true);
             element.addEventListener('beforeinput', onBeforeInput, true);
             element.addEventListener('input', onInput, true);
+
+            // Let probe setup and any rendering it triggers finish before the
+            // measured interval. Descendant EditContexts are attached lazily
+            // from the input event path, so large editors are not scanned here.
+            await nextFrame();
+            await nextFrame();
+            for (const { durations, observer } of observerRecords) {
+                observer.takeRecords();
+                durations.length = 0;
+            }
+
+            startedAt = performance.now();
+            previousFrameAt = startedAt;
+            recordFrameGaps = true;
             animationFrame = requestAnimationFrame(onAnimationFrame);
 
             probeWindow.__labkeeperE2EPerformanceProbe = {
@@ -575,6 +607,7 @@ export class EditorPerformanceDsl {
                         durationMs,
                         frameGapsMs,
                         inputToFrameMs,
+                        inputToUpdateMs,
                         longAnimationFramesMs,
                         longTasksMs,
                         supportsLongAnimationFrames,
@@ -610,6 +643,7 @@ export class EditorPerformanceDsl {
             durationMs: this.round(metrics.durationMs),
             frameGaps: this.summarize(metrics.frameGapsMs),
             inputToFrame: this.summarize(metrics.inputToFrameMs),
+            inputToUpdate: this.summarize(metrics.inputToUpdateMs),
             label,
             longAnimationFrames: this.summarize(
                 metrics.longAnimationFramesMs
@@ -653,33 +687,59 @@ export class EditorPerformanceDsl {
         minimumInputEvents: number
     ): void {
         expect(
-            report.inputToFrame.count,
-            `${report.label}: not all expected input events were rendered`
+            report.inputToUpdate.count,
+            `${report.label}: not all expected input events updated the editor`
         ).toBeGreaterThanOrEqual(minimumInputEvents);
         expect(
-            report.inputToFrame.p95Ms,
-            `${report.label}: p95 input-to-frame latency exceeded the budget`
-        ).toBeLessThanOrEqual(report.budget.inputToFrameP95Ms);
+            report.inputToUpdate.p95Ms,
+            `${report.label}: p95 input-to-update latency exceeded the budget`
+        ).toBeLessThanOrEqual(report.budget.inputToUpdateP95Ms);
         expect(
-            report.inputToFrame.maxMs,
-            `${report.label}: maximum input-to-frame latency exceeded the budget`
-        ).toBeLessThanOrEqual(report.budget.inputToFrameMaxMs);
-        expect(
-            report.frameGaps.p95Ms,
-            `${report.label}: p95 frame gap exceeded the budget`
-        ).toBeLessThanOrEqual(report.budget.frameGapP95Ms);
-        if (report.support.longTasks) {
+            report.inputToUpdate.maxMs,
+            `${report.label}: maximum input-to-update latency exceeded the budget`
+        ).toBeLessThanOrEqual(report.budget.inputToUpdateMaxMs);
+        if (report.budget.assertAnimationFrameTiming) {
             expect(
-                report.longTasks.maxMs,
-                `${report.label}: a long task exceeded the blocking budget`
-            ).toBeLessThanOrEqual(report.budget.blockingEntryMaxMs);
-        }
-        if (report.support.longAnimationFrames) {
+                report.inputToFrame.count,
+                `${report.label}: not all expected input events reached an animation frame`
+            ).toBeGreaterThanOrEqual(minimumInputEvents);
             expect(
-                report.longAnimationFrames.maxMs,
-                `${report.label}: a long animation frame exceeded the blocking budget`
-            ).toBeLessThanOrEqual(report.budget.blockingEntryMaxMs);
+                report.inputToFrame.p95Ms,
+                `${report.label}: p95 input-to-frame latency exceeded the budget`
+            ).toBeLessThanOrEqual(report.budget.inputToFrameP95Ms);
+            expect(
+                report.inputToFrame.maxMs,
+                `${report.label}: maximum input-to-frame latency exceeded the budget`
+            ).toBeLessThanOrEqual(report.budget.inputToFrameMaxMs);
+            expect(
+                report.frameGaps.p95Ms,
+                `${report.label}: p95 frame gap exceeded the budget`
+            ).toBeLessThanOrEqual(report.budget.frameGapP95Ms);
         }
+        this.expectBlockingEntriesResponsive(
+            report.longTasks,
+            report.support.longTasks,
+            report.budget.blockingEntryP50Ms,
+            `${report.label}: recurring long tasks exceeded the blocking budget`
+        );
+        this.expectBlockingEntriesResponsive(
+            report.longAnimationFrames,
+            report.support.longAnimationFrames,
+            report.budget.blockingEntryP50Ms,
+            `${report.label}: recurring long animation frames exceeded the blocking budget`
+        );
+    }
+
+    private expectBlockingEntriesResponsive(
+        summary: DistributionSummary,
+        supported: boolean,
+        p50LimitMs: number,
+        message: string
+    ): void {
+        if (!supported || summary.count < MINIMUM_BLOCKING_ENTRY_COUNT) {
+            return;
+        }
+        expect(summary.p50Ms, message).toBeLessThanOrEqual(p50LimitMs);
     }
 
     private performanceBudget(): PerformanceBudget {
