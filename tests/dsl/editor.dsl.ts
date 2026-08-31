@@ -83,9 +83,12 @@ export class EditorDsl {
                 if (attempt === 1) {
                     await editor.fill(text);
                 } else {
-                    await editor.press('Control+a');
-                    await editor.press('Backspace');
-                    await this.expectStableSegmentText(index, '');
+                    const currentText = await this.segmentText(index);
+                    if (currentText !== '') {
+                        await editor.press('Control+a');
+                        await editor.press('Backspace');
+                        await this.expectStableSegmentText(index, '');
+                    }
 
                     if (text) {
                         await this.focusSegment(index, editor);
@@ -497,16 +500,15 @@ export class EditorDsl {
         timeout = 15_000
     ): Promise<void> {
         await expect
-            .poll(
-                async () => {
-                    const lines = await this.locators
-                        .segmentLines(index)
-                        .allTextContents();
-                    return lines.join('\n');
-                },
-                { timeout }
-            )
+            .poll(async () => this.segmentText(index), { timeout })
             .toBe(text);
+    }
+
+    private async segmentText(index: number): Promise<string> {
+        const lines = await this.locators
+            .segmentLines(index)
+            .allTextContents();
+        return lines.join('\n');
     }
 
     private async expectStableSegmentText(
