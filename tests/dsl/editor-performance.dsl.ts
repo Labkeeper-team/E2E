@@ -538,9 +538,27 @@ export class EditorPerformanceDsl {
                     // The requestAnimationFrame probe remains available as a fallback.
                 }
             };
-            const nextFrame = () =>
+            // Headless WebKit may pause animation frames even while timers and
+            // editor input remain responsive. Keep probe setup and teardown
+            // bounded so a missing frame cannot consume the action timeout.
+            const nextFrameOrTimeout = () =>
                 new Promise<void>((resolve) => {
-                    requestAnimationFrame(() => resolve());
+                    let settled = false;
+                    let frameId = 0;
+                    let timeoutId = 0;
+                    const finish = () => {
+                        if (settled) {
+                            return;
+                        }
+
+                        settled = true;
+                        window.clearTimeout(timeoutId);
+                        cancelAnimationFrame(frameId);
+                        resolve();
+                    };
+
+                    timeoutId = window.setTimeout(() => finish(), 250);
+                    frameId = requestAnimationFrame(() => finish());
                 });
 
             if (supportsLongTasks) {
@@ -558,8 +576,8 @@ export class EditorPerformanceDsl {
             // Let probe setup and any rendering it triggers finish before the
             // measured interval. Descendant EditContexts are attached lazily
             // from the input event path, so large editors are not scanned here.
-            await nextFrame();
-            await nextFrame();
+            await nextFrameOrTimeout();
+            await nextFrameOrTimeout();
             for (const { durations, observer } of observerRecords) {
                 observer.takeRecords();
                 durations.length = 0;
@@ -574,11 +592,8 @@ export class EditorPerformanceDsl {
                 stop: async () => {
                     const stoppedAt = performance.now();
                     recordFrameGaps = false;
-                    await new Promise<void>((resolve) => {
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => resolve());
-                        });
-                    });
+                    await nextFrameOrTimeout();
+                    await nextFrameOrTimeout();
 
                     cancelAnimationFrame(animationFrame);
                     element.removeEventListener('keydown', onKeyDown, true);
