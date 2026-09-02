@@ -13,6 +13,7 @@
     "test:safari": "playwright test --project=macOS Safari",
     "test:android": "playwright test --project=Android Chrome",
     "test:iphone": "playwright test --project=iPhone Safari",
+    "test:performance": "playwright test tests/performance",
     "test:scenarios": "playwright test tests/scenarios",
     "test:local": "E2E_BROWSER=chromium playwright test",
     "test:list": "playwright test --list",
