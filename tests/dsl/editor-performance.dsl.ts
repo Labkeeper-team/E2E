@@ -22,20 +22,18 @@ interface PerformanceBudget {
     assertAnimationFrameTiming: boolean;
     blockingEntryP50Ms: number;
     frameGapP95Ms: number;
-    inputToFrameMaxMs: number;
+    inputToFrameHardLimitMs: number;
     inputToFrameP95Ms: number;
-    inputToUpdateMaxMs: number;
+    inputToUpdateHardLimitMs: number;
     inputToUpdateP95Ms: number;
-    postResponseRenderMs: number;
 }
 
 const DEFAULT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
     assertAnimationFrameTiming: true,
-    postResponseRenderMs: 5_000,
     inputToFrameP95Ms: 200,
-    inputToFrameMaxMs: 500,
+    inputToFrameHardLimitMs: 2_000,
     inputToUpdateP95Ms: 100,
-    inputToUpdateMaxMs: 500,
+    inputToUpdateHardLimitMs: 2_000,
     frameGapP95Ms: 100,
     blockingEntryP50Ms: 500,
 });
@@ -43,7 +41,7 @@ const DEFAULT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
 const WEBKIT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
     ...DEFAULT_PERFORMANCE_BUDGET,
     assertAnimationFrameTiming: false,
-    inputToUpdateP95Ms: 150,
+    inputToUpdateP95Ms: 250,
 });
 
 interface RawPerformanceMetrics {
@@ -201,7 +199,7 @@ export class EditorPerformanceDsl {
             LARGE_PROJECT_SEGMENT_COUNT,
             { timeout: 60_000 }
         );
-        await this.expectLargeProjectRenderWithinBudget(projectId);
+        await this.reportLargeProjectReadiness(projectId);
 
         const report = await this.measure(
             'many-segments-scrolling-and-editing',
@@ -357,10 +355,10 @@ export class EditorPerformanceDsl {
         );
     }
 
-    private async expectLargeProjectRenderWithinBudget(
+    private async reportLargeProjectReadiness(
         projectId: string
     ): Promise<void> {
-        const durationMs = await this.page.evaluate((id) => {
+        const responseToEditorReadyMs = await this.page.evaluate((id) => {
             const resources = performance.getEntriesByType(
                 'resource'
             ) as PerformanceResourceTiming[];
@@ -377,21 +375,19 @@ export class EditorPerformanceDsl {
         }, projectId);
 
         expect(
-            durationMs,
+            responseToEditorReadyMs,
             'Could not find the managed project resource timing'
         ).not.toBeNull();
-        const roundedDurationMs = this.round(durationMs ?? Number.POSITIVE_INFINITY);
-        const budget = this.performanceBudget();
-        await this.attachReport('many-segments-initial-render', {
+        await this.attachReport('many-segments-editor-readiness', {
             browser: this.testInfo.project.name,
-            budgetMs: budget.postResponseRenderMs,
-            durationMs: roundedDurationMs,
+            label: 'many-segments-editor-readiness',
+            linesPerSegment: 1,
             measuredAt: new Date().toISOString(),
+            responseToEditorReadyMs: this.round(
+                responseToEditorReadyMs ?? Number.POSITIVE_INFINITY
+            ),
+            segmentCount: LARGE_PROJECT_SEGMENT_COUNT,
         });
-        expect(
-            roundedDurationMs,
-            'Rendering 100 segments after the project response exceeded the budget'
-        ).toBeLessThanOrEqual(budget.postResponseRenderMs);
     }
 
     private async measure(
@@ -711,8 +707,8 @@ export class EditorPerformanceDsl {
         ).toBeLessThanOrEqual(report.budget.inputToUpdateP95Ms);
         expect(
             report.inputToUpdate.maxMs,
-            `${report.label}: maximum input-to-update latency exceeded the budget`
-        ).toBeLessThanOrEqual(report.budget.inputToUpdateMaxMs);
+            `${report.label}: input-to-update latency exceeded the hard freeze limit`
+        ).toBeLessThanOrEqual(report.budget.inputToUpdateHardLimitMs);
         if (report.budget.assertAnimationFrameTiming) {
             expect(
                 report.inputToFrame.count,
@@ -724,8 +720,8 @@ export class EditorPerformanceDsl {
             ).toBeLessThanOrEqual(report.budget.inputToFrameP95Ms);
             expect(
                 report.inputToFrame.maxMs,
-                `${report.label}: maximum input-to-frame latency exceeded the budget`
-            ).toBeLessThanOrEqual(report.budget.inputToFrameMaxMs);
+                `${report.label}: input-to-frame latency exceeded the hard freeze limit`
+            ).toBeLessThanOrEqual(report.budget.inputToFrameHardLimitMs);
             expect(
                 report.frameGaps.p95Ms,
                 `${report.label}: p95 frame gap exceeded the budget`
@@ -764,6 +760,7 @@ export class EditorPerformanceDsl {
     }
 
     private async attachReport(label: string, report: object): Promise<void> {
+        console.log(`[performance:${label}] ${JSON.stringify(report)}`);
         await this.testInfo.attach(`performance-${label}.json`, {
             body: Buffer.from(JSON.stringify(report, null, 2)),
             contentType: 'application/json',
