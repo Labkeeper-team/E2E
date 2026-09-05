@@ -21,15 +21,17 @@ spec:
               env:
                 - name: E2E_HOST
                   value: https://labkeeper.io
-                - name: E2E_TELEGRAM_BOT_TOKEN
+                - name: E2E_NTFY_URL
+                  value: https://ntfy.mipt.io/tests
+                - name: E2E_NTFY_USERNAME
                   valueFrom:
                     secretKeyRef:
-                      key: type_3_e2e_bot_token
+                      key: type_3_e2e_ntfy_username
                       name: type-3-e2e-secrets
-                - name: E2E_TELEGRAM_CHAT_ID
+                - name: E2E_NTFY_PASSWORD
                   valueFrom:
                     secretKeyRef:
-                      key: type_3_e2e_chat_id
+                      key: type_3_e2e_ntfy_password
                       name: type-3-e2e-secrets
                 - name: E2E_CAPTCHA_BYPASS_TOKEN
                   valueFrom:

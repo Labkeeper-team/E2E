@@ -29,8 +29,5 @@
     "@types/node": "^25.0.9",
     "dotenv": "^17.4.2",
     "typescript": "^5.9.3"
-  },
-  "dependencies": {
-    "@b3nab/playwright-telegram-reporter": "^1.1.1"
   }
 }

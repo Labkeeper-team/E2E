@@ -52,14 +52,18 @@ const projects: Project[] =
           ]
         : productionBrowserProjects;
 
-const reporter: ReporterDescription[] = process.env.E2E_TELEGRAM_BOT_TOKEN
+const ntfyUrl = process.env.E2E_NTFY_URL?.trim();
+
+const reporter: ReporterDescription[] = ntfyUrl
     ? [
           ['list'],
           [
-              '@b3nab/playwright-telegram-reporter',
+              './tests/reporters/ntfy-reporter.ts',
               {
-                  botToken: process.env.E2E_TELEGRAM_BOT_TOKEN,
-                  chatId: process.env.E2E_TELEGRAM_CHAT_ID,
+                  url: ntfyUrl,
+                  username: process.env.E2E_NTFY_USERNAME,
+                  password: process.env.E2E_NTFY_PASSWORD,
+                  host,
               },
           ],
       ]
