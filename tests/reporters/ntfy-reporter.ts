@@ -140,8 +140,9 @@ export default class NtfyReporter implements Reporter {
                 );
             }
         } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            process.stderr.write(`[ntfy-reporter] Publish failed: ${reason}\n`);
+            process.stderr.write(
+                `[ntfy-reporter] Publish failed: ${describeError(error)}\n`
+            );
         }
     }
 }
@@ -158,6 +159,16 @@ function describeFailure(test: TestCase): FailureSummary {
         title: test.titlePath().filter(Boolean).join(' › '),
         error: errorLine ? shorten(errorLine, 200) : '',
     };
+}
+
+function describeError(error: unknown): string {
+    if (!(error instanceof Error)) {
+        return String(error);
+    }
+    // У ошибок fetch реальная причина (ECONNREFUSED, ENOTFOUND и т.п.) лежит в cause.
+    const cause =
+        error.cause instanceof Error ? error.cause.message : error.cause;
+    return cause ? `${error.message} (${String(cause)})` : error.message;
 }
 
 function describeStatus(status: FullResult['status'], failed: number): string {
