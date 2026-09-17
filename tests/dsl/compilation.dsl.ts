@@ -7,6 +7,7 @@ import {
 } from '@playwright/test';
 import { EditorLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
+import type { ResponseRecorder } from './response-recorder';
 
 const isCompilationRequest = (request: Request): boolean => {
     if (request.method() !== 'POST') {
@@ -27,12 +28,17 @@ export interface CompilationResult {
     url: string;
 }
 
+export type GuestPdfRunResult =
+    | { outcome: 'compiled'; pdfUri: string }
+    | { outcome: 'loginRequired' };
+
 export class CompilationDsl {
     private readonly locators: EditorLocators;
 
     constructor(
         private readonly page: Page,
-        private readonly projectView: ProjectViewDsl
+        private readonly projectView: ProjectViewDsl,
+        private readonly responses: ResponseRecorder
     ) {
         this.locators = new EditorLocators(page);
     }
@@ -54,6 +60,20 @@ export class CompilationDsl {
         };
     }
 
+    async runPdfAsGuest(): Promise<GuestPdfRunResult> {
+        const response = await this.runShowingProgress();
+        // HTTP 425 is the daily anonymous limit, and the editor answers it with the login modal
+        if (response.status() === 425) {
+            return { outcome: 'loginRequired' };
+        }
+
+        return { outcome: 'compiled', pdfUri: await this.pdfUriOf(response) };
+    }
+
+    async runPdfSuccessfully(): Promise<string> {
+        return this.pdfUriOf(await this.runShowingProgress());
+    }
+
     async runSuccessfully(): Promise<void> {
         const result = await this.run();
         expect(result.status).toBe(200);
@@ -70,6 +90,21 @@ export class CompilationDsl {
 
     async runAnonymousWithCompilationErrors(): Promise<void> {
         await this.runAnonymousWithExpectedStatus(203);
+    }
+
+    private async runShowingProgress(): Promise<Response> {
+        await this.projectView.showEditor();
+        this.responses.restart();
+        const response = await this.clickRunAndWaitForResponse(async () => {
+            await expect(this.locators.compilingRunButton).toBeVisible();
+        });
+        expect(new URL(response.url()).pathname).toMatch(
+            /\/project\/[^/]+\/compile\/pdf$/
+        );
+        await expect(this.locators.enabledRunButton).toBeAttached({
+            timeout: 60_000,
+        });
+        return response;
     }
 
     private async clickRunAndWaitForResponse(
@@ -101,6 +136,16 @@ export class CompilationDsl {
             );
         }
         return responsePromise;
+    }
+
+    private async pdfUriOf(response: Response): Promise<string> {
+        expect(
+            response.status(),
+            `LaTeX compilation returned HTTP ${response.status()}`
+        ).toBe(200);
+        const { pdfUri } = (await response.json()) as { pdfUri: string };
+        expect(pdfUri).toBeTruthy();
+        return pdfUri;
     }
 
     private async runAnonymousWithExpectedStatus(

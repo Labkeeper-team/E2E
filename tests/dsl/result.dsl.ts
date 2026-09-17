@@ -1,6 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 import { ResultLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
+import type { ResponseRecorder } from './response-recorder';
 
 // A production PDF is compiled, downloaded and rendered before anything can be read from it, so every wait on the viewer gets the same long budget
 const PDF_RENDER_TIMEOUT_MS = 60_000;
@@ -10,7 +11,8 @@ export class ResultDsl {
 
     constructor(
         private readonly page: Page,
-        private readonly projectView: ProjectViewDsl
+        private readonly projectView: ProjectViewDsl,
+        private readonly responses: ResponseRecorder
     ) {
         this.locators = new ResultLocators(page);
     }
@@ -23,6 +25,18 @@ export class ResultDsl {
         await expect(this.locators.loadingPdf).toBeHidden({
             timeout: PDF_RENDER_TIMEOUT_MS,
         });
+    }
+
+    async expectPdfFrom(pdfUri: string): Promise<void> {
+        await expect
+            .poll(() => this.responses.hasLoaded(pdfUri), {
+                message: `The viewer did not load ${pdfUri}`,
+                timeout: 60_000,
+            })
+            .toBe(true);
+        await expect
+            .poll(() => this.readPdfText(), { timeout: 60_000 })
+            .not.toBe('');
     }
 
     async readPdfText(): Promise<string> {

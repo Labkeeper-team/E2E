@@ -470,6 +470,26 @@ export class EditorDsl {
         }
     }
 
+    async requestCloneAsGuest(): Promise<void> {
+        await this.projectView.showEditor();
+        await this.locators.cloneProjectButton.click();
+    }
+
+    async expectOwnEditableProject(): Promise<void> {
+        await this.projectView.showEditor();
+        await expect(this.locators.cloneProjectButton).toBeHidden();
+        await expect(this.locators.readOnlyBadge).toBeHidden();
+        await expect(this.locators.undoButton).toBeVisible();
+
+        const editorCount = await this.locators.segmentEditors.count();
+        expect(editorCount).toBeGreaterThan(0);
+        for (let index = 0; index < editorCount; index += 1) {
+            await expect(
+                this.locators.segmentEditor(index)
+            ).not.toHaveAttribute('aria-readonly', 'true');
+        }
+    }
+
     async setPublicAccess(isPublic: boolean): Promise<void> {
         if (await this.locators.shareButton.isVisible()) {
             await this.locators.shareButton.click();
