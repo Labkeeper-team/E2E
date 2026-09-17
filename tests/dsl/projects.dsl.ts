@@ -1,9 +1,14 @@
 import {
     expect,
+    request,
     type Page,
     type TestInfo,
 } from '@playwright/test';
-import { input } from '../input';
+import {
+    input,
+    requireUserCredentials,
+    type UserCredentials,
+} from '../input';
 import { ProjectLocators } from './locators';
 
 export type ProjectType = 'Markdown' | 'LaTeX';
@@ -288,6 +293,7 @@ export class ProjectsDsl {
         }
 
         const possibleNames = [...names].reverse();
+        let lastFailure: string | undefined;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             await this.openList();
 
@@ -296,15 +302,22 @@ export class ProjectsDsl {
             );
             if (currentName) {
                 this.assertReservedProjectName(currentName);
-                await this.deleteProjectRow(id, currentName);
-                this.managedProjectsById.delete(id);
-                return;
+                lastFailure = await this.deleteProjectRow(id, currentName);
+                if (!lastFailure) {
+                    this.managedProjectsById.delete(id);
+                    return;
+                }
             }
 
             await this.page.waitForTimeout(1_000);
         }
 
-        throw new Error(`Managed project ${id} was not found for cleanup`);
+        // The row sometimes does not show up in the list, and a project left on production pollutes the account
+        await this.deleteProjectAsUser(id, requireUserCredentials());
+        this.managedProjectsById.delete(id);
+        if (lastFailure) {
+            throw new Error(lastFailure);
+        }
     }
 
     private async findExistingProjectName(
@@ -344,6 +357,41 @@ export class ProjectsDsl {
         }
     }
 
+    private async deleteProjectAsUser(
+        id: string,
+        owner: UserCredentials
+    ): Promise<void> {
+        expect(
+            this.apiBasePath,
+            'Project API version was not discovered'
+        ).toBeTruthy();
+        // The page may be logged out after a failure, so cleanup uses its own session of the project owner
+        const api = await request.newContext({ baseURL: input.host });
+        try {
+            const login = await api.post(`${this.apiBasePath}/sec/formlogin`, {
+                form: {
+                    username: owner.email,
+                    password: owner.password,
+                    captcha: input.captchaBypassToken ?? '',
+                },
+            });
+            expect(
+                login.ok(),
+                `Cleanup login returned HTTP ${login.status()}`
+            ).toBeTruthy();
+
+            const response = await api.delete(
+                `${this.apiBasePath}/public/project/${encodeURIComponent(id)}/delete`
+            );
+            expect(
+                response.ok() || response.status() === 404,
+                `Project ${id} cleanup returned HTTP ${response.status()}`
+            ).toBeTruthy();
+        } finally {
+            await api.dispose();
+        }
+    }
+
     private rememberApiBasePath(url: string): void {
         const path = new URL(url).pathname;
         const match = path.match(/^\/api\/v\d+/);
@@ -364,7 +412,10 @@ export class ProjectsDsl {
         );
     }
 
-    private async deleteProjectRow(id: string, title: string): Promise<void> {
+    private async deleteProjectRow(
+        id: string,
+        title: string
+    ): Promise<string | undefined> {
         const row = this.locators.projectRow(title);
         await expect(row).toBeVisible({ timeout: 30_000 });
         await this.locators.projectDeleteButton(title).click();
@@ -377,7 +428,16 @@ export class ProjectsDsl {
             { timeout: 30_000 }
         );
         await this.locators.confirmDeleteButton.click();
-        expect((await responsePromise).ok()).toBeTruthy();
+        const response = await responsePromise;
+        if (response.status() === 404) {
+            return undefined;
+        }
+        // One production run got a failed delete right after the test worked with the project, so the caller retries
+        if (!response.ok()) {
+            const body = await response.text().catch(() => '');
+            return `Deleting project ${id} returned HTTP ${response.status()}: ${body.slice(0, 200)}`;
+        }
         await expect(row).toHaveCount(0, { timeout: 30_000 });
+        return undefined;
     }
 }
