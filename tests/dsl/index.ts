@@ -5,13 +5,18 @@ import { CompilationDsl } from './compilation.dsl';
 import { EditorPerformanceDsl } from './editor-performance.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
+import { LandingDsl } from './landing.dsl';
+import { MailboxDsl } from './mailbox.dsl';
 import { NavigationDsl } from './navigation.dsl';
 import { ProjectViewDsl } from './project-view.dsl';
 import {
     ProjectListUnauthorizedError,
     ProjectsDsl,
 } from './projects.dsl';
+import { ResponseRecorder } from './response-recorder';
 import { ResultDsl } from './result.dsl';
+import type { UserCredentials } from '../input';
+import { randomBytes } from 'node:crypto';
 
 export class LabkeeperDsl {
     readonly access: AccessDsl;
@@ -19,6 +24,8 @@ export class LabkeeperDsl {
     readonly compilation: CompilationDsl;
     readonly editor: EditorDsl;
     readonly files: FileManagerDsl;
+    readonly landing: LandingDsl;
+    readonly mailbox: MailboxDsl;
     readonly navigation: NavigationDsl;
     readonly performance: EditorPerformanceDsl;
     readonly projects: ProjectsDsl;
@@ -29,12 +36,15 @@ export class LabkeeperDsl {
         testInfo: TestInfo
     ) {
         const projectView = new ProjectViewDsl(page);
+        const responses = new ResponseRecorder(page);
 
         this.access = new AccessDsl(page);
         this.auth = new AuthDsl(page);
-        this.compilation = new CompilationDsl(page, projectView);
+        this.compilation = new CompilationDsl(page, projectView, responses);
         this.editor = new EditorDsl(page, projectView);
         this.files = new FileManagerDsl(page, projectView);
+        this.landing = new LandingDsl(page);
+        this.mailbox = new MailboxDsl();
         this.navigation = new NavigationDsl(page);
         this.projects = new ProjectsDsl(page, testInfo);
         this.performance = new EditorPerformanceDsl(
@@ -46,7 +56,7 @@ export class LabkeeperDsl {
             this.navigation,
             this.projects
         );
-        this.results = new ResultDsl(page, projectView);
+        this.results = new ResultDsl(page, projectView, responses);
     }
 
     async openAnonymousEditor(): Promise<void> {
@@ -58,7 +68,27 @@ export class LabkeeperDsl {
         await this.auth.login();
     }
 
+    async createNewUser(): Promise<UserCredentials> {
+        const { address } = await this.mailbox.create();
+        return {
+            email: address,
+            password: randomBytes(18).toString('base64url'),
+        };
+    }
+
     async cleanup(): Promise<void> {
+        try {
+            await this.deleteManagedProjects();
+        } finally {
+            try {
+                await this.projects.deleteClonedProjects();
+            } finally {
+                await this.mailbox.dispose();
+            }
+        }
+    }
+
+    private async deleteManagedProjects(): Promise<void> {
         const projects = this.projects.managedProjects();
         if (projects.length === 0) {
             return;

@@ -9,7 +9,7 @@ import {
     requireUserCredentials,
     type UserCredentials,
 } from '../input';
-import { ProjectLocators } from './locators';
+import { EditorLocators, ProjectLocators } from './locators';
 
 export type ProjectType = 'Markdown' | 'LaTeX';
 
@@ -27,7 +27,10 @@ export class ProjectListUnauthorizedError extends Error {
 
 export class ProjectsDsl {
     private readonly locators: ProjectLocators;
+    private readonly editorLocators: EditorLocators;
     private readonly managedProjectsById = new Map<string, Set<string>>();
+    // Clones belong to users created by the test and get the source title, so they are tracked by id and owner
+    private readonly clonedProjectsById = new Map<string, UserCredentials>();
     private apiBasePath?: string;
     private sequence = 0;
 
@@ -36,6 +39,7 @@ export class ProjectsDsl {
         private readonly testInfo: TestInfo
     ) {
         this.locators = new ProjectLocators(page);
+        this.editorLocators = new EditorLocators(page);
     }
 
     uniqueProjectName(label: string): string {
@@ -199,6 +203,78 @@ export class ProjectsDsl {
         }
 
         throw lastError;
+    }
+
+    async cloneOpenedProject(
+        owner: UserCredentials
+    ): Promise<{ id: string; title: string }> {
+        const sourceId = new URL(this.page.url()).pathname.split('/').pop();
+        const cloneResponsePromise = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                new RegExp(`/api/v\\d+/public/project/${sourceId}/clone$`).test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 60_000 }
+        );
+        cloneResponsePromise.catch(() => undefined);
+        await this.editorLocators.cloneProjectButton.click();
+        const cloneResponse = await cloneResponsePromise;
+        expect(
+            cloneResponse.ok(),
+            `Project clone returned HTTP ${cloneResponse.status()}`
+        ).toBeTruthy();
+        this.rememberApiBasePath(cloneResponse.url());
+
+        const { projectId: id, title } = (await cloneResponse.json()) as {
+            projectId: string;
+            title: string;
+        };
+        expect(id).toBeTruthy();
+        expect(id).not.toBe(sourceId);
+        this.clonedProjectsById.set(id, owner);
+
+        await expect(this.page).toHaveURL(
+            (url) => url.pathname === `/project/${id}`,
+            { timeout: 30_000 }
+        );
+        await this.locators.editorRoot.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
+        return { id, title };
+    }
+
+    async openListFromProject(): Promise<void> {
+        const listResponse = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'GET' &&
+                /\/api\/v\d+\/public\/project\/all$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 60_000 }
+        );
+        listResponse.catch(() => undefined);
+        await this.locators.backToProjectsButton.click();
+        expect((await listResponse).status()).toBe(200);
+        await expect(this.page).toHaveURL(/\/projects$/);
+        await this.locators.addProjectButton.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
+    }
+
+    async expectProjectInCurrentList(title: string): Promise<void> {
+        await expect(this.locators.projectRow(title)).toBeVisible({
+            timeout: 30_000,
+        });
+    }
+
+    async deleteClonedProjects(): Promise<void> {
+        for (const [id, owner] of [...this.clonedProjectsById]) {
+            await this.deleteProjectAsUser(id, owner);
+            this.clonedProjectsById.delete(id);
+        }
     }
 
     async openProjectFromList(title: string): Promise<void> {
