@@ -3,6 +3,8 @@ import { EditorLocators, type SegmentType } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
 const SEGMENT_INPUT_ATTEMPTS = 3;
+// Segments container in the editor starts its scroll to the end with setTimeout(1000), plus a frame of margin
+const ADDED_SEGMENT_SCROLL_DELAY_MS = 1_100;
 
 export class EditorDsl {
     private readonly locators: EditorLocators;
@@ -42,12 +44,14 @@ export class EditorDsl {
             await select.click();
             await this.locators.segmentOption(type).click();
         }
+        const addedAt = Date.now();
 
         await expect(this.locators.segmentEditors).toHaveCount(index + 1);
 
         if (text !== undefined) {
             await this.fillSegment(index, text);
         }
+        await this.waitForScrollToAddedSegment(addedAt);
 
         return index;
     }
@@ -518,6 +522,38 @@ export class EditorDsl {
         await this.expectSegmentText(index, text, 5_000);
         await this.page.waitForTimeout(100);
         await this.expectSegmentText(index, text, 5_000);
+    }
+
+    private async waitForScrollToAddedSegment(addedAt: number): Promise<void> {
+        const list = this.locators.segmentsScrollContainer;
+        if (
+            !(await list.evaluate(
+                (element) => element.scrollHeight > element.clientHeight + 1
+            ))
+        ) {
+            return;
+        }
+
+        // The editor smoothly scrolls the list to the end a second after adding a segment, and a click during that scroll misses its target
+        const untilScroll =
+            ADDED_SEGMENT_SCROLL_DELAY_MS - (Date.now() - addedAt);
+        if (untilScroll > 0) {
+            await this.page.waitForTimeout(untilScroll);
+        }
+        let previousTop = -1;
+        await expect
+            .poll(
+                async () => {
+                    const top = await list.evaluate(
+                        (element) => element.scrollTop
+                    );
+                    const stopped = top === previousTop;
+                    previousTop = top;
+                    return stopped;
+                },
+                { intervals: [250], timeout: 10_000 }
+            )
+            .toBe(true);
     }
 
     private async focusSegment(index: number, editor: Locator): Promise<void> {

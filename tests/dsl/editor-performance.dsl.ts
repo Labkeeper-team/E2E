@@ -181,7 +181,8 @@ export class EditorPerformanceDsl {
     }
 
     async expectManySegmentsResponsive(projectId: string): Promise<void> {
-        const marker = ' responsive';
+        // With eleven key presses p95 was simply the slowest one, so a single scheduler stall decided the result
+        const marker = ' responsive typing in the last of one hundred segments';
         const segments = Array.from(
             { length: LARGE_PROJECT_SEGMENT_COUNT },
             (_, index) => ({
@@ -200,6 +201,8 @@ export class EditorPerformanceDsl {
             { timeout: 60_000 }
         );
         await this.reportLargeProjectReadiness(projectId);
+        // A never-compiled project opens on the agent screen of a phone, and the list is scrolled only in the editor
+        await this.projectView.showEditor();
 
         const report = await this.measure(
             'many-segments-scrolling-and-editing',

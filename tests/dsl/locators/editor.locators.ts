@@ -141,6 +141,12 @@ export class EditorLocators {
         return this.page.locator('.run-button:not(.disabled)');
     }
 
+    get compilingRunButton(): Locator {
+        return this.page
+            .locator('.run-button.disabled')
+            .filter({ hasText: /^Loading\.\.\.$/ });
+    }
+
     get autocompletePopup(): Locator {
         return this.page.locator('.cm-tooltip-autocomplete:visible');
     }
