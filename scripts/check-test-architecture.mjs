@@ -39,12 +39,13 @@ const forbiddenSpecPatterns = [
     ['direct placeholder query', /\.getByPlaceholder\s*\(/],
 ];
 
-// Only production serves the landing, so a spec reaching it must stay behind ENABLE_LANDING_TESTS
+// Only production serves the landing, so a spec reaching it must stay behind ENABLE_LANDING_TESTS.
+// The rule asks for the whole skip call, because a leftover import alone keeps neither the gate nor tsc red
 const requiredSpecPatterns = [
     [
         'landing gate on landingTestsEnabled',
         /\bapp\.landing\b/,
-        /\blandingTestsEnabled\b/,
+        /test\.skip\(\s*\(\s*\)\s*=>\s*!landingTestsEnabled\b/,
     ],
 ];
 
