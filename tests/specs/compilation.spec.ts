@@ -1,5 +1,14 @@
 import { test } from '../fixtures';
 
+// Every compilation gets its own word, so an exact page text check cannot pass on the PDF of the previous run
+const FIRST_TEXT = 'alpha';
+const SECOND_TEXT = 'omega';
+const THIRD_TEXT = 'sigma';
+
+// \pagestyle{empty} drops the page number, so the text of the whole page equals the text of the segment
+const latexBody = (text: string): string => String.raw`\pagestyle{empty}
+${text}`;
+
 test.describe('Production compilation', () => {
     test('renders Markdown content for PDF export @authenticated', async ({
         app,
@@ -26,6 +35,37 @@ test.describe('Production compilation', () => {
         await app.results.expectMarkdownText('Playwright production check');
         await app.results.expectTable();
         await app.results.expectPdfExportAvailable();
+    });
+
+    test('updates the PDF text after each of three compilations @authenticated', async ({
+        app,
+    }) => {
+        // The DSL gives a single compilation up to 120 s for its answer, and the default 240 s would cut three of them short
+        test.setTimeout(6 * 60_000);
+
+        await app.openAuthenticatedEditor();
+        await app.projects.createManagedProject('sequential-pdf', 'LaTeX');
+        let bodySegment = await app.editor.addSegment(
+            'Latex',
+            latexBody(FIRST_TEXT)
+        );
+        await app.editor.insertLatexHeader();
+        bodySegment += 1;
+        await app.editor.insertLatexFooter();
+        await app.editor.waitForSaved();
+
+        await app.compilation.runSuccessfully();
+        await app.results.expectPdfText(FIRST_TEXT);
+
+        await app.editor.fillSegment(bodySegment, latexBody(SECOND_TEXT));
+        await app.editor.waitForSaved();
+        await app.compilation.runSuccessfully();
+        await app.results.expectRecompiledPdfText(SECOND_TEXT);
+
+        await app.editor.fillSegment(bodySegment, latexBody(THIRD_TEXT));
+        await app.editor.waitForSaved();
+        await app.compilation.runSuccessfully();
+        await app.results.expectRecompiledPdfText(THIRD_TEXT);
     });
 
     test('shows a real compiler error @authenticated', async ({ app }) => {

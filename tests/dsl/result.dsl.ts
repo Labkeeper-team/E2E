@@ -2,6 +2,11 @@ import { expect, type Page } from '@playwright/test';
 import { ResultLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
+// The first PDF of a project is downloaded and rendered from scratch, so the viewer is given a long wait
+const PDF_RENDER_TIMEOUT_MS = 60_000;
+// A repeated compilation redraws an already loaded viewer, so a shorter wait reports the unexpected page text instead of a whole test timeout
+const RECOMPILED_PDF_TIMEOUT_MS = 30_000;
+
 export class ResultDsl {
     private readonly locators: ResultLocators;
 
@@ -12,16 +17,16 @@ export class ResultDsl {
         this.locators = new ResultLocators(page);
     }
 
-    async expectPdf(): Promise<void> {
+    async expectPdf(timeout = PDF_RENDER_TIMEOUT_MS): Promise<void> {
         await this.projectView.showPdf();
         await expect(this.locators.visibleCanvas.first()).toBeVisible({
-            timeout: 60_000,
+            timeout,
         });
-        await expect(this.locators.loadingPdf).toBeHidden({ timeout: 60_000 });
+        await expect(this.locators.loadingPdf).toBeHidden({ timeout });
     }
 
-    async readPdfText(): Promise<string> {
-        await this.expectPdf();
+    async readPdfText(timeout = PDF_RENDER_TIMEOUT_MS): Promise<string> {
+        await this.expectPdf(timeout);
         await expect(this.locators.pdfTextLayers.first()).toBeAttached();
 
         const fragments = await this.locators.pdfTextSpans.allTextContents();
@@ -33,14 +38,22 @@ export class ResultDsl {
     }
 
     async expectPdfText(expected: string): Promise<void> {
-        await expect.poll(() => this.readPdfText(), { timeout: 60_000 }).toBe(
-            expected
-        );
+        await expect
+            .poll(() => this.readPdfText(), { timeout: PDF_RENDER_TIMEOUT_MS })
+            .toBe(expected);
+    }
+
+    async expectRecompiledPdfText(expected: string): Promise<void> {
+        await expect
+            .poll(() => this.readPdfText(RECOMPILED_PDF_TIMEOUT_MS), {
+                timeout: RECOMPILED_PDF_TIMEOUT_MS,
+            })
+            .toBe(expected);
     }
 
     async expectPdfTextContains(expected: string | RegExp): Promise<void> {
         await expect
-            .poll(() => this.readPdfText(), { timeout: 60_000 })
+            .poll(() => this.readPdfText(), { timeout: PDF_RENDER_TIMEOUT_MS })
             .toMatch(expected);
     }
 
