@@ -39,6 +39,15 @@ const forbiddenSpecPatterns = [
     ['direct placeholder query', /\.getByPlaceholder\s*\(/],
 ];
 
+// Only production serves the landing, so a spec reaching it must stay behind ENABLE_LANDING_TESTS
+const requiredSpecPatterns = [
+    [
+        'landing gate on landingTestsEnabled',
+        /\bapp\.landing\b/,
+        /\blandingTestsEnabled\b/,
+    ],
+];
+
 for (const file of testFiles) {
     const source = await readFile(file, 'utf8');
     const relativePath = path.relative(root, file);
@@ -53,6 +62,12 @@ for (const file of testFiles) {
         for (const [label, pattern] of forbiddenSpecPatterns) {
             if (pattern.test(source)) {
                 violations.push(`${relativePath}: forbidden ${label}`);
+            }
+        }
+
+        for (const [label, trigger, required] of requiredSpecPatterns) {
+            if (trigger.test(source) && !required.test(source)) {
+                violations.push(`${relativePath}: missing ${label}`);
             }
         }
     }

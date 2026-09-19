@@ -21,6 +21,8 @@ spec:
               env:
                 - name: E2E_HOST
                   value: https://labkeeper.io
+                - name: ENABLE_LANDING_TESTS
+                  value: "1"
                 - name: E2E_NTFY_URL
                   value: https://ntfy.mipt.io/tests
                 - name: E2E_NTFY_USERNAME

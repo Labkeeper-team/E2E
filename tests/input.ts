@@ -1,6 +1,8 @@
 const DEFAULT_HOST = 'https://labkeeper.io';
 const DEFAULT_PROJECT_PREFIX = 'e2e-autotest';
-const DEFAULT_MAILBOX_API = 'https://api.mail.tm';
+
+// Without them a flag could only be switched off by deleting its line from .env
+const disabledFlagValues = new Set(['0', 'false', 'off', 'no']);
 
 const placeholderValues = new Set([
     '',
@@ -21,11 +23,11 @@ function optionalEnvironmentValue(name: string): string | undefined {
     return value && !placeholderValues.has(value) ? value : undefined;
 }
 
-function normalizeHost(value: string, variable = 'E2E_HOST'): string {
+function normalizeHost(value: string): string {
     const parsed = new URL(value);
 
     if (!['http:', 'https:'].includes(parsed.protocol)) {
-        throw new Error(`${variable} must use http or https`);
+        throw new Error('E2E_HOST must use http or https');
     }
 
     return parsed.toString().replace(/\/$/, '');
@@ -63,11 +65,13 @@ export const input = Object.freeze({
     projectPrefix: normalizeProjectPrefix(
         process.env.E2E_PROJECT_PREFIX?.trim() || DEFAULT_PROJECT_PREFIX
     ),
-    mailboxApi: normalizeHost(
-        process.env.E2E_MAILBOX_API?.trim() || DEFAULT_MAILBOX_API,
-        'E2E_MAILBOX_API'
-    ),
+    landingTests: optionalEnvironmentValue('ENABLE_LANDING_TESTS'),
 });
+
+// Only production serves the landing, so stands answering / with the editor bundle leave the flag unset
+export const landingTestsEnabled =
+    input.landingTests !== undefined &&
+    !disabledFlagValues.has(input.landingTests.toLowerCase());
 
 export interface UserCredentials {
     email: string;

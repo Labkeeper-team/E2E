@@ -111,49 +111,6 @@ export class AuthDsl {
         await expect(this.locators.authModal).toBeHidden();
     }
 
-    async register(
-        credentials: UserCredentials,
-        readCode: () => Promise<string>
-    ): Promise<void> {
-        await this.expectLoginRequired();
-        await this.locators.registrationButton.click();
-        await expect(this.locators.authModalTitle).toHaveText(
-            'Enter your email'
-        );
-        await this.locators.registrationEmailInput.fill(credentials.email);
-        await this.locators.personalDataConsentCheckbox.check();
-        // Without the bypass in the email step a hidden captcha keeps the button disabled, which reads like a timeout otherwise
-        await expect(
-            this.locators.sendCodeButton,
-            'The editor does not apply E2E_CAPTCHA_BYPASS_TOKEN to registration, so the code cannot be requested'
-        ).toBeEnabled();
-        const emailResponse = this.waitForAuthResponse('email');
-        await this.locators.sendCodeButton.click();
-        await this.expectAuthResponseOk(await emailResponse);
-        await expect(this.locators.authModalTitle).toHaveText(
-            'Enter the code',
-            { timeout: 30_000 }
-        );
-
-        await this.locators.confirmationCodeInput.fill(await readCode());
-        const codeResponse = this.waitForAuthResponse('code');
-        await this.locators.confirmCodeButton.click();
-        const codeResult = await codeResponse;
-        await this.expectAuthResponseOk(codeResult);
-        expect((await codeResult.json()).valid).toBe(true);
-        await expect(this.locators.authModalTitle).toHaveText('Set password');
-
-        await this.locators.newPasswordInput.fill(credentials.password);
-        await this.locators.confirmPasswordInput.fill(credentials.password);
-        const passwordResponse = this.waitForAuthResponse('password');
-        await this.locators.savePasswordButton.click();
-        await this.expectAuthResponseOk(await passwordResponse);
-        await expect(this.locators.authModalTitle).toHaveText('Success');
-
-        await this.locators.continueButton.click();
-        await this.expectLoginRequired();
-    }
-
     async loginInOpenAuthModal(credentials: UserCredentials): Promise<void> {
         await this.expectLoginRequired();
         await this.locators.modalLoginInput.fill(credentials.email);
@@ -181,7 +138,7 @@ export class AuthDsl {
     }
 
     async acceptPrivacyPolicyIfShown(): Promise<boolean> {
-        // Email registration already asks for consent, so production may not show the modal at all
+        // The permanent test account accepted the policy long ago, so production usually shows nothing
         const shown = await expect(this.locators.privacyPolicyModal)
             .toBeVisible({ timeout: 5_000 })
             .then(() => true)
@@ -207,18 +164,6 @@ export class AuthDsl {
         await expect(this.locators.privacyPolicyModal).toBeHidden();
     }
 
-    async expectPrivacyPolicyNotRequired(
-        credentials: UserCredentials
-    ): Promise<void> {
-        await this.waitForInitialUserInfo();
-        await expect(
-            this.locators.accountIdentity(credentials.email).first()
-        ).toBeAttached({ timeout: 30_000 });
-        // The modal is opened by startup after user-info, so give it the time it would need to appear
-        await this.page.waitForTimeout(2_000);
-        await expect(this.locators.privacyPolicyModal).toBeHidden();
-    }
-
     async expireSession(): Promise<void> {
         await this.page.context().clearCookies();
     }
@@ -229,20 +174,6 @@ export class AuthDsl {
         }
 
         await this.acceptPrivacyPolicy();
-    }
-
-    private waitForAuthResponse(endpoint: 'email' | 'code' | 'password') {
-        const response = this.page.waitForResponse(
-            (candidate) =>
-                candidate.request().method() === 'POST' &&
-                new RegExp(`/api/v\\d+/public/${endpoint}$`).test(
-                    new URL(candidate.url()).pathname
-                ),
-            { timeout: 30_000 }
-        );
-        // A failed click leaves the wait pending, and its rejection at test end would hide the real error
-        response.catch(() => undefined);
-        return response;
     }
 
     private async expectAuthResponseOk(response: Response): Promise<void> {
