@@ -1,5 +1,9 @@
 import { test } from '../../fixtures';
-import { input, type UserCredentials } from '../../input';
+import {
+    input,
+    landingTestsEnabled,
+    requireUserCredentials,
+} from '../../input';
 
 // Each guest run spends the shared daily anonymous limit, so the scenario stops after a few of them
 const GUEST_RUNS = 3;
@@ -10,20 +14,27 @@ const GUEST_COMPILABLE_CATEGORY = 'diploma';
 const LOGIN_REQUIRED_PROBLEM = 'Login is required to proceed';
 
 test.describe('New user LaTeX preview scenarios', () => {
-    test('compiles a LaTeX example as a guest, registers and compiles its clone @scenario @registration', async ({
+    // The landing comes from production alone, so a stand serving the editor bundle on / never reaches it
+    test.skip(
+        () => !landingTestsEnabled,
+        'Landing scenarios need ENABLE_LANDING_TESTS'
+    );
+
+    test('compiles a LaTeX example as a guest, logs in and compiles its clone @authenticated @scenario', async ({
         app,
     }) => {
         test.setTimeout(10 * 60_000);
+        // The login form of the modal asks for a captcha exactly like registration does
         test.skip(
             !input.captchaBypassToken,
-            'Registration needs E2E_CAPTCHA_BYPASS_TOKEN'
+            'Logging in from the example needs E2E_CAPTCHA_BYPASS_TOKEN'
         );
 
+        const user = requireUserCredentials();
         let exampleId = '';
         let guestCompilations = 0;
         let guestLimitReached = false;
-        let user: UserCredentials | undefined;
-        let clone = { id: '', title: '' };
+        let cloneName = '';
 
         await test.step('opens a LaTeX example from the landing examples', async () => {
             const examples = await app.landing.open();
@@ -88,31 +99,26 @@ test.describe('New user LaTeX preview scenarios', () => {
             await app.auth.expectLoginRequired();
         });
 
-        await test.step('registers, logs in and accepts the privacy policy once', async () => {
-            user = await app.createNewUser();
-            await app.auth.register(user, () =>
-                app.mailbox.waitForRegistrationCode()
-            );
+        await test.step('logs in with the test account in the same modal', async () => {
             await app.auth.loginInOpenAuthModal(user);
             const privacyPolicyShown =
                 await app.auth.acceptPrivacyPolicyIfShown();
             test.info().annotations.push({
                 type: 'privacy policy',
                 description: privacyPolicyShown
-                    ? 'accepted in the modal after the first login'
-                    : 'already accepted by the registration consent',
+                    ? 'a new version was accepted in the modal after the login'
+                    : 'the test account had accepted it before the run',
             });
-            await app.navigation.reload();
-            await app.auth.expectPrivacyPolicyNotRequired(user);
         });
 
         await test.step('returns to the example and clones it', async () => {
             await app.navigation.openEditor(`/project/${exampleId}`);
             await app.editor.expectReadOnlyPublicProject();
-            clone = await app.projects.cloneOpenedProject(
-                user as UserCredentials
-            );
+            await app.projects.cloneOpenedProject(user);
             await app.editor.expectOwnEditableProject();
+            // The clone keeps the example title, which matches several rows in the list of a permanent account
+            cloneName = app.projects.uniqueProjectName('preview-clone');
+            await app.editor.renameProjectWithEnter(cloneName);
         });
 
         await test.step('compiles the cloned project', async () => {
@@ -122,7 +128,7 @@ test.describe('New user LaTeX preview scenarios', () => {
 
         await test.step('finds the clone in My projects', async () => {
             await app.projects.openListFromProject();
-            await app.projects.expectProjectInCurrentList(clone.title);
+            await app.projects.expectProjectInCurrentList(cloneName);
         });
     });
 });

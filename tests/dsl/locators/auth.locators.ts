@@ -83,65 +83,6 @@ export class AuthLocators {
             .getByRole('button', { name: 'Login', exact: true });
     }
 
-    get registrationButton(): Locator {
-        return this.authModal.getByRole('button', {
-            name: 'Registration',
-            exact: true,
-        });
-    }
-
-    get registrationEmailInput(): Locator {
-        return this.authModal.getByPlaceholder('Email', { exact: true });
-    }
-
-    get personalDataConsentCheckbox(): Locator {
-        return this.authModal.getByRole('checkbox');
-    }
-
-    get sendCodeButton(): Locator {
-        return this.authModal.getByRole('button', {
-            name: 'Send code',
-            exact: true,
-        });
-    }
-
-    get confirmationCodeInput(): Locator {
-        return this.authModal.getByPlaceholder('Confirm code', {
-            exact: true,
-        });
-    }
-
-    get confirmCodeButton(): Locator {
-        return this.authModal.getByRole('button', {
-            name: 'Confirm code',
-            exact: true,
-        });
-    }
-
-    get newPasswordInput(): Locator {
-        return this.authModal.getByPlaceholder('Password', { exact: true });
-    }
-
-    get confirmPasswordInput(): Locator {
-        return this.authModal.getByPlaceholder('Confirm password', {
-            exact: true,
-        });
-    }
-
-    get savePasswordButton(): Locator {
-        return this.authModal.getByRole('button', {
-            name: 'Save',
-            exact: true,
-        });
-    }
-
-    get continueButton(): Locator {
-        return this.authModal.getByRole('button', {
-            name: 'Continue',
-            exact: true,
-        });
-    }
-
     get privacyPolicyModal(): Locator {
         return this.page.locator('.privacy-policy-acceptance-modal');
     }

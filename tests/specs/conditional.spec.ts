@@ -62,6 +62,13 @@ test.describe('Scenarios requiring additional production conditions', () => {
         );
     });
 
+    test('registration-with-real-email @conditional', async () => {
+        test.skip(
+            true,
+            'Production has no user deletion API, so every run would leave one more account behind'
+        );
+    });
+
     test('public-project-different-user-compilation-ok @conditional', async ({
         app,
     }) => {

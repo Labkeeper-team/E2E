@@ -6,7 +6,6 @@ import { EditorPerformanceDsl } from './editor-performance.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
 import { LandingDsl } from './landing.dsl';
-import { MailboxDsl } from './mailbox.dsl';
 import { NavigationDsl } from './navigation.dsl';
 import { ProjectViewDsl } from './project-view.dsl';
 import {
@@ -15,8 +14,6 @@ import {
 } from './projects.dsl';
 import { ResponseRecorder } from './response-recorder';
 import { ResultDsl } from './result.dsl';
-import type { UserCredentials } from '../input';
-import { randomBytes } from 'node:crypto';
 
 export class LabkeeperDsl {
     readonly access: AccessDsl;
@@ -25,7 +22,6 @@ export class LabkeeperDsl {
     readonly editor: EditorDsl;
     readonly files: FileManagerDsl;
     readonly landing: LandingDsl;
-    readonly mailbox: MailboxDsl;
     readonly navigation: NavigationDsl;
     readonly performance: EditorPerformanceDsl;
     readonly projects: ProjectsDsl;
@@ -44,7 +40,6 @@ export class LabkeeperDsl {
         this.editor = new EditorDsl(page, projectView);
         this.files = new FileManagerDsl(page, projectView);
         this.landing = new LandingDsl(page);
-        this.mailbox = new MailboxDsl();
         this.navigation = new NavigationDsl(page);
         this.projects = new ProjectsDsl(page, testInfo);
         this.performance = new EditorPerformanceDsl(
@@ -68,23 +63,11 @@ export class LabkeeperDsl {
         await this.auth.login();
     }
 
-    async createNewUser(): Promise<UserCredentials> {
-        const { address } = await this.mailbox.create();
-        return {
-            email: address,
-            password: randomBytes(18).toString('base64url'),
-        };
-    }
-
     async cleanup(): Promise<void> {
         try {
             await this.deleteManagedProjects();
         } finally {
-            try {
-                await this.projects.deleteClonedProjects();
-            } finally {
-                await this.mailbox.dispose();
-            }
+            await this.projects.deleteClonedProjects();
         }
     }
 
