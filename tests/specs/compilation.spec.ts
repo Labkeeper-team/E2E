@@ -40,8 +40,8 @@ test.describe('Production compilation', () => {
     test('updates the PDF text after each of three compilations @authenticated', async ({
         app,
     }) => {
-        // The DSL gives a single compilation up to 120 s for its answer, and the default 240 s would cut three of them short
-        test.setTimeout(6 * 60_000);
+        // One compilation waits up to 120 s for the answer and up to 60 s more for the Run button to unlock, and the fixture teardown that logs in and deletes the project counts into the same budget
+        test.setTimeout(10 * 60_000);
 
         await app.openAuthenticatedEditor();
         await app.projects.createManagedProject('sequential-pdf', 'LaTeX');
@@ -60,12 +60,12 @@ test.describe('Production compilation', () => {
         await app.editor.fillSegment(bodySegment, latexBody(SECOND_TEXT));
         await app.editor.waitForSaved();
         await app.compilation.runSuccessfully();
-        await app.results.expectRecompiledPdfText(SECOND_TEXT);
+        await app.results.expectPdfText(SECOND_TEXT);
 
         await app.editor.fillSegment(bodySegment, latexBody(THIRD_TEXT));
         await app.editor.waitForSaved();
         await app.compilation.runSuccessfully();
-        await app.results.expectRecompiledPdfText(THIRD_TEXT);
+        await app.results.expectPdfText(THIRD_TEXT);
     });
 
     test('shows a real compiler error @authenticated', async ({ app }) => {

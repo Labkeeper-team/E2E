@@ -10,7 +10,7 @@
 
 ## Проверочный прогон
 
-Последний полный прогон в Docker против production 16 августа 2026 года:
+Последний полный прогон в Docker против production 16 августа 2026 года, 324 выполнения на тот момент:
 
 - Настольные профили Microsoft Edge, Google Chrome, Windows Firefox и macOS Safari: 174 passed, 42 skipped, 0 failed.
 - Android Chrome: 44 passed, 10 skipped, 0 failed.

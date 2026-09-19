@@ -2,10 +2,8 @@ import { expect, type Page } from '@playwright/test';
 import { ResultLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
-// The first PDF of a project is downloaded and rendered from scratch, so the viewer is given a long wait
+// A production PDF is compiled, downloaded and rendered before anything can be read from it, so every wait on the viewer gets the same long budget
 const PDF_RENDER_TIMEOUT_MS = 60_000;
-// A repeated compilation redraws an already loaded viewer, so a shorter wait reports the unexpected page text instead of a whole test timeout
-const RECOMPILED_PDF_TIMEOUT_MS = 30_000;
 
 export class ResultDsl {
     private readonly locators: ResultLocators;
@@ -17,17 +15,22 @@ export class ResultDsl {
         this.locators = new ResultLocators(page);
     }
 
-    async expectPdf(timeout = PDF_RENDER_TIMEOUT_MS): Promise<void> {
+    async expectPdf(): Promise<void> {
         await this.projectView.showPdf();
         await expect(this.locators.visibleCanvas.first()).toBeVisible({
-            timeout,
+            timeout: PDF_RENDER_TIMEOUT_MS,
         });
-        await expect(this.locators.loadingPdf).toBeHidden({ timeout });
+        await expect(this.locators.loadingPdf).toBeHidden({
+            timeout: PDF_RENDER_TIMEOUT_MS,
+        });
     }
 
-    async readPdfText(timeout = PDF_RENDER_TIMEOUT_MS): Promise<string> {
-        await this.expectPdf(timeout);
-        await expect(this.locators.pdfTextLayers.first()).toBeAttached();
+    async readPdfText(): Promise<string> {
+        await this.expectPdf();
+        // A repeated compilation clears the viewer and draws the canvas before the text layer, and expect.poll ends on a thrown error instead of polling again, so this wait may not be shorter than the poll around it
+        await expect(this.locators.pdfTextLayers.first()).toBeAttached({
+            timeout: PDF_RENDER_TIMEOUT_MS,
+        });
 
         const fragments = await this.locators.pdfTextSpans.allTextContents();
         return fragments
@@ -40,14 +43,6 @@ export class ResultDsl {
     async expectPdfText(expected: string): Promise<void> {
         await expect
             .poll(() => this.readPdfText(), { timeout: PDF_RENDER_TIMEOUT_MS })
-            .toBe(expected);
-    }
-
-    async expectRecompiledPdfText(expected: string): Promise<void> {
-        await expect
-            .poll(() => this.readPdfText(RECOMPILED_PDF_TIMEOUT_MS), {
-                timeout: RECOMPILED_PDF_TIMEOUT_MS,
-            })
             .toBe(expected);
     }
 
@@ -67,7 +62,7 @@ export class ResultDsl {
     ): Promise<void> {
         await this.projectView.showPdf();
         const canvas = this.locators.pdfPageCanvas(pageNumber);
-        await expect(canvas).toBeVisible({ timeout: 60_000 });
+        await expect(canvas).toBeVisible({ timeout: PDF_RENDER_TIMEOUT_MS });
         const encodedPng = await canvas.evaluate((element) => {
             if (!(element instanceof HTMLCanvasElement)) {
                 throw new Error('PDF page canvas was not found');
@@ -95,7 +90,7 @@ export class ResultDsl {
     async expectPdfScrolledToText(text: string): Promise<void> {
         await this.projectView.showPdf();
         const target = this.locators.pdfText(text);
-        await expect(target).toBeVisible({ timeout: 60_000 });
+        await expect(target).toBeVisible({ timeout: PDF_RENDER_TIMEOUT_MS });
         await expect
             .poll(async () => {
                 const [scrollTop, containerBox, targetBox] = await Promise.all([
@@ -122,7 +117,7 @@ export class ResultDsl {
     async selectPdfText(text: string): Promise<void> {
         await this.projectView.showPdf();
         const target = this.locators.pdfText(text);
-        await expect(target).toBeVisible({ timeout: 60_000 });
+        await expect(target).toBeVisible({ timeout: PDF_RENDER_TIMEOUT_MS });
         const box = await target.boundingBox();
         expect(box).not.toBeNull();
         await target.click({
