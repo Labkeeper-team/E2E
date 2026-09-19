@@ -7,8 +7,6 @@ import {
 
 // Each guest run spends the shared daily anonymous limit, so the scenario stops after a few of them
 const GUEST_RUNS = 3;
-// access.spec needs the same per-address limit in every profile, so the guest runs happen in one of them
-const GUEST_COMPILATION_PROFILE = 'Google Chrome';
 // Other LaTeX examples include project files, which a guest compilation cannot read
 const GUEST_COMPILABLE_CATEGORY = 'diploma';
 const LOGIN_REQUIRED_PROBLEM = 'Login is required to proceed';
@@ -51,14 +49,19 @@ test.describe('New user LaTeX preview scenarios', () => {
             await app.editor.expectReadOnlyPublicProject();
         });
 
-        const runsAsGuest =
-            test.info().project.name === GUEST_COMPILATION_PROFILE;
+        // access.spec spends the same per-address limit in every profile, so the guest runs wait for the profile Playwright starts last
+        const profileNames = test
+            .info()
+            .config.projects.map((project) => project.name);
+        // A name taken from the run survives a rename of the profile and keeps the step alive in a single-profile config
+        const guestProfile = profileNames.at(-1);
+        const runsAsGuest = test.info().project.name === guestProfile;
 
         await test.step('compiles the example as a guest several times', async () => {
             if (!runsAsGuest) {
                 test.info().annotations.push({
                     type: 'guest compilations',
-                    description: `checked only in ${GUEST_COMPILATION_PROFILE} to keep the anonymous limit`,
+                    description: `checked only in ${guestProfile} to keep the anonymous limit`,
                 });
                 return;
             }
@@ -90,8 +93,9 @@ test.describe('New user LaTeX preview scenarios', () => {
                 return;
             }
             await app.auth.expectLoginRequired();
-            await app.results.expectCompilationError(LOGIN_REQUIRED_PROBLEM);
+            // The modal overlay covers the problems header, so the panel opens only after the modal is gone
             await app.auth.closeAuthModal();
+            await app.results.expectCompilationError(LOGIN_REQUIRED_PROBLEM);
         });
 
         await test.step('asks the guest to log in before cloning', async () => {
