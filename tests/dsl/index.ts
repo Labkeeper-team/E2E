@@ -79,12 +79,15 @@ export class LabkeeperDsl {
 
         await this.navigation.openEditor();
         await this.auth.login();
+        // /project/default opens the last changed project of the account, possibly the test project itself, so lock reports show whether the editor had opened one before cleanup left
+        const editorPath = this.navigation.currentProjectPath();
 
         for (const project of projects.reverse()) {
             try {
                 await this.projects.deleteManagedProject(
                     project.id,
-                    project.names
+                    project.names,
+                    editorPath
                 );
             } catch (error) {
                 if (!(error instanceof ProjectListUnauthorizedError)) {
@@ -94,7 +97,8 @@ export class LabkeeperDsl {
                 await this.auth.login();
                 await this.projects.deleteManagedProject(
                     project.id,
-                    project.names
+                    project.names,
+                    editorPath
                 );
             }
         }
