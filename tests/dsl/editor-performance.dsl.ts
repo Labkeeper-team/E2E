@@ -4,6 +4,7 @@ import {
     type Page,
     type TestInfo,
 } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
 import { EditorLocators, FileManagerLocators } from './locators';
@@ -17,6 +18,18 @@ const HELD_KEY_PRESS_COUNT = 120;
 const HELD_KEY_INTERVAL_MS = 16;
 const SCROLL_STEPS_PER_DIRECTION = 45;
 const MINIMUM_BLOCKING_ENTRY_COUNT = 3;
+// The first characters after the probe starts or after a jump through the document pay for rendering the new region,
+// so they stay out of the percentiles. Counting characters rather than input events keeps the iPhone Enter out as well
+const WARMUP_CHARACTERS_PER_SERIES = 2;
+// One series gives about fifty key presses, so p95 would again be decided by the third slowest one
+const LONG_SEGMENT_SERIES = 3;
+const MODIFIER_KEYS = ['Alt', 'Control', 'Meta', 'Shift'];
+// cgroup v2 first, then the two usual cgroup v1 mount points
+const CGROUP_CPU_STAT_PATHS = [
+    '/sys/fs/cgroup/cpu.stat',
+    '/sys/fs/cgroup/cpu/cpu.stat',
+    '/sys/fs/cgroup/cpu,cpuacct/cpu.stat',
+];
 
 interface PerformanceBudget {
     assertAnimationFrameTiming: boolean;
@@ -25,6 +38,7 @@ interface PerformanceBudget {
     inputToFrameHardLimitMs: number;
     inputToFrameP95Ms: number;
     inputToUpdateHardLimitMs: number;
+    inputToUpdateP50Ms?: number;
     inputToUpdateP95Ms: number;
 }
 
@@ -38,10 +52,18 @@ const DEFAULT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
     blockingEntryP50Ms: 500,
 });
 
+// Nightly WebKit latencies cluster near multiples of 100 ms: the median stays about 100 and p95 is either about 200
+// or about 290. Our hypothesis, until cpuThrottling confirms it, is CFS quantization in the one-CPU container.
+// The former p95 limit of 250 ms sat between those two modes and failed almost half of the runs. The median catches
+// a slow typical key press. p95 catches only recurring delays: more than 5% of the key presses after the warm-up,
+// at least eight of 141 in the long segment, must exceed 350 ms. A single stall or a slow warm-up character
+// is caught only by the hard limit. The p95 limit of 350 ms is temporary: revisit it after the first nightly runs
+// with raw samples
 const WEBKIT_PERFORMANCE_BUDGET: PerformanceBudget = Object.freeze({
     ...DEFAULT_PERFORMANCE_BUDGET,
     assertAnimationFrameTiming: false,
-    inputToUpdateP95Ms: 250,
+    inputToUpdateP50Ms: 150,
+    inputToUpdateP95Ms: 350,
 });
 
 interface RawPerformanceMetrics {
@@ -49,6 +71,7 @@ interface RawPerformanceMetrics {
     frameGapsMs: number[];
     inputToFrameMs: number[];
     inputToUpdateMs: number[];
+    inputToUpdateSeriesPositions: number[];
     longAnimationFramesMs: number[];
     longTasksMs: number[];
     supportsLongAnimationFrames: boolean;
@@ -62,13 +85,34 @@ interface DistributionSummary {
     p95Ms: number;
 }
 
+interface CgroupCpuStat {
+    path: string;
+    values: Record<string, number>;
+}
+
+interface CpuThrottling {
+    after: Record<string, number>;
+    before: Record<string, number>;
+    path: string;
+    periods: number | null;
+    throttledMs: number | null;
+    throttledPeriods: number | null;
+    usageMs: number | null;
+}
+
 interface PerformanceReport {
     browser: string;
     budget: PerformanceBudget;
+    cpuThrottling: CpuThrottling | null;
     durationMs: number;
     frameGaps: DistributionSummary;
     inputToFrame: DistributionSummary;
     inputToUpdate: DistributionSummary;
+    inputToUpdateSamples: {
+        latencyMs: number[];
+        seriesPosition: number[];
+    };
+    inputToUpdateSteady: DistributionSummary;
     label: string;
     longAnimationFrames: DistributionSummary;
     longTasks: DistributionSummary;
@@ -77,6 +121,7 @@ interface PerformanceReport {
         longAnimationFrames: boolean;
         longTasks: boolean;
     };
+    warmupCharactersPerSeries: number;
 }
 
 export class EditorPerformanceDsl {
@@ -98,8 +143,19 @@ export class EditorPerformanceDsl {
 
     async expectLongSegmentEditingResponsive(projectId: string): Promise<void> {
         const initialText = this.largeDocument('Segment');
-        const headMarker = 'head-performance-marker ';
-        const tailMarker = 'tail-performance-marker';
+        // Markers differ between series but keep one length, so each check waits for the text of its own series
+        const seriesMarkers = Array.from(
+            { length: LONG_SEGMENT_SERIES },
+            (_, index) => ({
+                head: `head-performance-marker-${index + 1} `,
+                tail: `tail-performance-marker-${index + 1}`,
+            })
+        );
+        const firstLine = this.largeDocumentLine('Segment', 1);
+        const lastLine = this.largeDocumentLine(
+            'Segment',
+            LARGE_DOCUMENT_LINE_COUNT
+        );
 
         await this.projects.replaceManagedProjectProgram(projectId, [
             { type: 'md', text: initialText },
@@ -113,28 +169,47 @@ export class EditorPerformanceDsl {
         const segment = this.editorLocators.segmentEditor(0);
         await this.focusSegment(0);
         await this.moveToDocumentEnd(segment);
-        await this.editor.expectSegmentContainsText(
-            0,
-            `Segment ${LARGE_DOCUMENT_LINE_COUNT.toString().padStart(4, '0')}`
-        );
+        await this.editor.expectSegmentContainsText(0, lastLine);
 
         const report = await this.measure(
             'long-segment-editing',
             segment,
             async () => {
-                await segment.press('Enter');
-                await segment.pressSequentially(tailMarker, { delay: 10 });
-                await this.editor.expectSegmentContainsText(0, tailMarker);
+                // A missed jump still leaves the marker in the rendered lines, so each check includes its neighbour
+                let previousTail = lastLine;
+                let previousHead = firstLine;
+                for (const [index, { head, tail }] of seriesMarkers.entries()) {
+                    if (index > 0) {
+                        await this.moveToDocumentEnd(segment);
+                    }
+                    await segment.press('Enter');
+                    await segment.pressSequentially(tail, { delay: 10 });
+                    await this.editor.expectSegmentContainsText(
+                        0,
+                        `${previousTail}\n${tail}`
+                    );
 
-                await this.moveToDocumentStart(segment);
-                await segment.pressSequentially(headMarker, { delay: 10 });
-                await this.editor.expectSegmentContainsText(0, headMarker);
+                    await this.moveToDocumentStart(segment);
+                    await segment.pressSequentially(head, { delay: 10 });
+                    await this.editor.expectSegmentContainsText(
+                        0,
+                        `${head}${previousHead}`
+                    );
+
+                    previousTail = tail;
+                    previousHead = head;
+                }
             }
         );
 
+        // Each series types after a jump to the end and after a jump to the start
         this.expectResponsive(
             report,
-            headMarker.length + tailMarker.length
+            seriesMarkers.reduce(
+                (count, { head, tail }) => count + head.length + tail.length,
+                0
+            ),
+            2 * LONG_SEGMENT_SERIES
         );
         await this.editor.waitForSaved();
     }
@@ -156,7 +231,7 @@ export class EditorPerformanceDsl {
         await fileEditor.focus();
         await this.moveToDocumentEnd(fileEditor);
         await this.files.expectOpenTextFileContainsText(
-            `% File ${LARGE_DOCUMENT_LINE_COUNT.toString().padStart(4, '0')}`
+            this.largeDocumentLine('% File', LARGE_DOCUMENT_LINE_COUNT)
         );
 
         const report = await this.measure(
@@ -175,7 +250,8 @@ export class EditorPerformanceDsl {
 
         this.expectResponsive(
             report,
-            headMarker.length + tailMarker.length
+            headMarker.length + tailMarker.length,
+            2
         );
         await this.files.waitForOpenTextFileSaved();
     }
@@ -275,11 +351,13 @@ export class EditorPerformanceDsl {
     }
 
     private largeDocument(prefix: string): string {
-        return Array.from(
-            { length: LARGE_DOCUMENT_LINE_COUNT },
-            (_, index) =>
-                `${prefix} ${(index + 1).toString().padStart(4, '0')}`
+        return Array.from({ length: LARGE_DOCUMENT_LINE_COUNT }, (_, index) =>
+            this.largeDocumentLine(prefix, index + 1)
         ).join('\n');
+    }
+
+    private largeDocumentLine(prefix: string, lineNumber: number): string {
+        return `${prefix} ${lineNumber.toString().padStart(4, '0')}`;
     }
 
     private async focusSegment(index: number): Promise<void> {
@@ -399,13 +477,19 @@ export class EditorPerformanceDsl {
         action: () => Promise<void>
     ): Promise<PerformanceReport> {
         await this.startProbe(target);
+        const cpuStatBefore = await this.readCgroupCpuStat();
         let report: PerformanceReport | undefined;
 
         try {
             await action();
         } finally {
+            const cpuStatAfter = await this.readCgroupCpuStat();
             const rawMetrics = await this.stopProbe();
-            report = this.createReport(label, rawMetrics);
+            report = this.createReport(
+                label,
+                rawMetrics,
+                this.cpuThrottling(cpuStatBefore, cpuStatAfter)
+            );
             await this.attachReport(label, report);
         }
 
@@ -413,7 +497,7 @@ export class EditorPerformanceDsl {
     }
 
     private async startProbe(target: Locator): Promise<void> {
-        await target.evaluate(async (element) => {
+        await target.evaluate(async (element, modifierKeys) => {
             type Probe = {
                 stop: () => Promise<RawPerformanceMetrics>;
             };
@@ -428,6 +512,7 @@ export class EditorPerformanceDsl {
             const frameGapsMs: number[] = [];
             const inputToFrameMs: number[] = [];
             const inputToUpdateMs: number[] = [];
+            const inputToUpdateSeriesPositions: number[] = [];
             const longAnimationFramesMs: number[] = [];
             const longTasksMs: number[] = [];
             const observerRecords: Array<{
@@ -443,6 +528,10 @@ export class EditorPerformanceDsl {
             let startedAt = 0;
             let previousFrameAt = 0;
             let pendingInputAt: number | undefined;
+            // Characters typed since the probe started or since the last jump through the document
+            let seriesCharacters = 0;
+            let pendingSeriesPosition = 0;
+            let pendingCharacterCounted = false;
             let animationFrame = 0;
             let recordFrameGaps = false;
 
@@ -464,9 +553,12 @@ export class EditorPerformanceDsl {
                 }
 
                 const inputAt = pendingInputAt;
+                const seriesPosition = pendingSeriesPosition;
                 pendingInputAt = undefined;
+                pendingCharacterCounted = false;
                 queueMicrotask(() => {
                     inputToUpdateMs.push(performance.now() - inputAt);
+                    inputToUpdateSeriesPositions.push(seriesPosition);
                     requestAnimationFrame(() => {
                         inputToFrameMs.push(performance.now() - inputAt);
                     });
@@ -494,18 +586,36 @@ export class EditorPerformanceDsl {
             };
             const onKeyDown = (event: Event) => {
                 if (
-                    event instanceof KeyboardEvent &&
-                    containsTarget(event) &&
-                    isTextProducingKey(event)
+                    !(event instanceof KeyboardEvent) ||
+                    !containsTarget(event)
                 ) {
+                    return;
+                }
+                if (isTextProducingKey(event)) {
                     attachEditContextsFromEvent(event);
                     pendingInputAt = performance.now();
+                    pendingSeriesPosition = seriesCharacters;
+                    pendingCharacterCounted = event.key.length === 1;
+                    if (pendingCharacterCounted) {
+                        seriesCharacters += 1;
+                    }
+                } else if (!modifierKeys.includes(event.key)) {
+                    // A jump through the document starts a new series with its own warm-up
+                    seriesCharacters = 0;
                 }
             };
             const onBeforeInput = (event: Event) => {
-                if (containsTarget(event) && pendingInputAt === undefined) {
+                if (!containsTarget(event)) {
+                    return;
+                }
+                if (pendingInputAt === undefined) {
                     attachEditContextsFromEvent(event);
                     pendingInputAt = performance.now();
+                    pendingSeriesPosition = seriesCharacters;
+                }
+                // Playwright types characters outside the US layout without a keydown, so they are counted here
+                if (!pendingCharacterCounted && event instanceof InputEvent) {
+                    seriesCharacters += event.data?.length ?? 0;
                 }
             };
             const onInput = (event: Event) => {
@@ -622,6 +732,7 @@ export class EditorPerformanceDsl {
                         frameGapsMs,
                         inputToFrameMs,
                         inputToUpdateMs,
+                        inputToUpdateSeriesPositions,
                         longAnimationFramesMs,
                         longTasksMs,
                         supportsLongAnimationFrames,
@@ -629,7 +740,7 @@ export class EditorPerformanceDsl {
                     };
                 },
             };
-        });
+        }, MODIFIER_KEYS);
     }
 
     private async stopProbe(): Promise<RawPerformanceMetrics> {
@@ -649,15 +760,30 @@ export class EditorPerformanceDsl {
 
     private createReport(
         label: string,
-        metrics: RawPerformanceMetrics
+        metrics: RawPerformanceMetrics,
+        cpuThrottling: CpuThrottling | null
     ): PerformanceReport {
+        const steadyInputToUpdateMs = metrics.inputToUpdateMs.filter(
+            (_, index) =>
+                metrics.inputToUpdateSeriesPositions[index] >=
+                WARMUP_CHARACTERS_PER_SERIES
+        );
         return {
             browser: this.testInfo.project.name,
             budget: this.performanceBudget(),
+            cpuThrottling,
             durationMs: this.round(metrics.durationMs),
             frameGaps: this.summarize(metrics.frameGapsMs),
             inputToFrame: this.summarize(metrics.inputToFrameMs),
             inputToUpdate: this.summarize(metrics.inputToUpdateMs),
+            // Raw samples show whether slow key presses open a series or land anywhere in it
+            inputToUpdateSamples: {
+                latencyMs: metrics.inputToUpdateMs.map((value) =>
+                    Math.round(value)
+                ),
+                seriesPosition: metrics.inputToUpdateSeriesPositions,
+            },
+            inputToUpdateSteady: this.summarize(steadyInputToUpdateMs),
             label,
             longAnimationFrames: this.summarize(
                 metrics.longAnimationFramesMs
@@ -668,6 +794,7 @@ export class EditorPerformanceDsl {
                 longAnimationFrames: metrics.supportsLongAnimationFrames,
                 longTasks: metrics.supportsLongTasks,
             },
+            warmupCharactersPerSeries: WARMUP_CHARACTERS_PER_SERIES,
         };
     }
 
@@ -698,16 +825,30 @@ export class EditorPerformanceDsl {
 
     private expectResponsive(
         report: PerformanceReport,
-        minimumInputEvents: number
+        minimumInputEvents: number,
+        warmupCount = 1
     ): void {
         expect(
             report.inputToUpdate.count,
             `${report.label}: not all expected input events updated the editor`
         ).toBeGreaterThanOrEqual(minimumInputEvents);
+        // Characters the probe fails to count stay in the warm-up and would leave the budgets below an empty sample
         expect(
-            report.inputToUpdate.p95Ms,
+            report.inputToUpdateSteady.count,
+            `${report.label}: not all characters after the warm-up were measured`
+        ).toBeGreaterThanOrEqual(
+            minimumInputEvents - warmupCount * WARMUP_CHARACTERS_PER_SERIES
+        );
+        expect(
+            report.inputToUpdateSteady.p95Ms,
             `${report.label}: p95 input-to-update latency exceeded the budget`
         ).toBeLessThanOrEqual(report.budget.inputToUpdateP95Ms);
+        if (report.budget.inputToUpdateP50Ms !== undefined) {
+            expect(
+                report.inputToUpdateSteady.p50Ms,
+                `${report.label}: median input-to-update latency exceeded the budget`
+            ).toBeLessThanOrEqual(report.budget.inputToUpdateP50Ms);
+        }
         expect(
             report.inputToUpdate.maxMs,
             `${report.label}: input-to-update latency exceeded the hard freeze limit`
@@ -754,6 +895,59 @@ export class EditorPerformanceDsl {
             return;
         }
         expect(summary.p50Ms, message).toBeLessThanOrEqual(p50LimitMs);
+    }
+
+    // The runner and the browsers share one container, and its cgroup shows how often the action hit the CPU quota
+    private async readCgroupCpuStat(): Promise<CgroupCpuStat | null> {
+        for (const path of CGROUP_CPU_STAT_PATHS) {
+            try {
+                const text = await readFile(path, 'utf8');
+                return {
+                    path,
+                    values: Object.fromEntries(
+                        text
+                            .trim()
+                            .split('\n')
+                            .map((line) => line.trim().split(/\s+/))
+                            .map(([key, value]) => [key, Number(value)])
+                    ),
+                };
+            } catch {
+                // Try the next cgroup layout; local runs outside Linux have none of them
+            }
+        }
+        return null;
+    }
+
+    private cpuThrottling(
+        before: CgroupCpuStat | null,
+        after: CgroupCpuStat | null
+    ): CpuThrottling | null {
+        if (!before || !after || before.path !== after.path) {
+            return null;
+        }
+        const delta = (key: string): number | null =>
+            key in before.values && key in after.values
+                ? after.values[key] - before.values[key]
+                : null;
+        // cgroup v2 reports throttled_usec in microseconds, cgroup v1 reports throttled_time in nanoseconds
+        const throttledUsec = delta('throttled_usec');
+        const throttledNs = delta('throttled_time');
+        const usageUsec = delta('usage_usec');
+        return {
+            after: after.values,
+            before: before.values,
+            path: after.path,
+            periods: delta('nr_periods'),
+            throttledMs:
+                throttledUsec !== null
+                    ? this.round(throttledUsec / 1_000)
+                    : throttledNs !== null
+                      ? this.round(throttledNs / 1_000_000)
+                      : null,
+            throttledPeriods: delta('nr_throttled'),
+            usageMs: usageUsec === null ? null : this.round(usageUsec / 1_000),
+        };
     }
 
     private performanceBudget(): PerformanceBudget {
