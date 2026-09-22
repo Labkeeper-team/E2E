@@ -25,6 +25,61 @@ export class ProjectListUnauthorizedError extends Error {
     }
 }
 
+// Production answers DELETE with 423 while the project is locked, although spec/v4 does not list this code for deletion
+const PROJECT_LOCKED = 423;
+// A running agent lets go within a second of finishing, but nobody measured how long the nightly lock lasts, so a minute is a margin and not a fit
+const PROJECT_LOCK_WAIT_MS = 60_000;
+const PROJECT_LOCK_RETRY_INTERVALS_MS = [500, 1_000, 2_000, 4_000];
+const PROJECT_LOCK_MAX_RETRY_INTERVAL_MS = 5_000;
+
+const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Every delete attempt of one project, so a failure shows what the UI got before the owner session gave up
+class DeletionAttempts {
+    private readonly entries: string[] = [];
+    private firstLockAt?: number;
+
+    constructor(private readonly editorPath?: string) {}
+
+    record(via: 'UI' | 'API', status: number | 'row missing'): void {
+        if (status === PROJECT_LOCKED) {
+            this.firstLockAt ??= Date.now();
+        }
+        this.entries.push(`${via} ${status}`);
+    }
+
+    wasLocked(): boolean {
+        return this.firstLockAt !== undefined;
+    }
+
+    lockedForMs(): number {
+        return this.firstLockAt === undefined
+            ? 0
+            : Date.now() - this.firstLockAt;
+    }
+
+    toString(): string {
+        const groups: Array<{ entry: string; count: number }> = [];
+        for (const entry of this.entries) {
+            const last = groups.at(-1);
+            if (last?.entry === entry) {
+                last.count += 1;
+            } else {
+                groups.push({ entry, count: 1 });
+            }
+        }
+        const attempts = groups
+            .map(({ entry, count }) =>
+                count > 1 ? `${entry} x${count}` : entry
+            )
+            .join(', ');
+        return this.editorPath
+            ? `${attempts}; cleanup left the editor at ${this.editorPath}`
+            : attempts;
+    }
+}
+
 export class ProjectsDsl {
     private readonly locators: ProjectLocators;
     private readonly editorLocators: EditorLocators;
@@ -363,12 +418,17 @@ export class ProjectsDsl {
         this.addManagedNameAlias(currentTitle, newTitle);
     }
 
-    async deleteManagedProject(id: string, names: string[]): Promise<void> {
+    async deleteManagedProject(
+        id: string,
+        names: string[],
+        editorPath?: string
+    ): Promise<void> {
         for (const name of names) {
             this.assertReservedProjectName(name);
         }
 
         const possibleNames = [...names].reverse();
+        const attempts = new DeletionAttempts(editorPath);
         let lastFailure: string | undefined;
         for (let attempt = 0; attempt < 3; attempt += 1) {
             await this.openList();
@@ -378,21 +438,29 @@ export class ProjectsDsl {
             );
             if (currentName) {
                 this.assertReservedProjectName(currentName);
-                lastFailure = await this.deleteProjectRow(id, currentName);
-                if (!lastFailure) {
+                const result = await this.deleteProjectRow(id, currentName);
+                attempts.record('UI', result.status);
+                if (!result.failure) {
                     this.managedProjectsById.delete(id);
                     return;
                 }
+                // Clicking again cannot release a lock, the owner session below waits for it
+                if (result.status === PROJECT_LOCKED) {
+                    break;
+                }
+                lastFailure = result.failure;
+            } else {
+                attempts.record('UI', 'row missing');
             }
 
             await this.page.waitForTimeout(1_000);
         }
 
-        // The row sometimes does not show up in the list, and a project left on production pollutes the account
-        await this.deleteProjectAsUser(id, requireUserCredentials());
+        // The row sometimes does not show up in the list or the project stays locked, and a project left on production pollutes the account
+        await this.deleteProjectAsUser(id, requireUserCredentials(), attempts);
         this.managedProjectsById.delete(id);
         if (lastFailure) {
-            throw new Error(lastFailure);
+            throw new Error(`${lastFailure}; attempts: ${attempts}`);
         }
     }
 
@@ -435,7 +503,8 @@ export class ProjectsDsl {
 
     private async deleteProjectAsUser(
         id: string,
-        owner: UserCredentials
+        owner: UserCredentials,
+        attempts = new DeletionAttempts()
     ): Promise<void> {
         expect(
             this.apiBasePath,
@@ -456,16 +525,49 @@ export class ProjectsDsl {
                 `Cleanup login returned HTTP ${login.status()}`
             ).toBeTruthy();
 
-            const response = await api.delete(
-                `${this.apiBasePath}/public/project/${encodeURIComponent(id)}/delete`
-            );
-            expect(
-                response.ok() || response.status() === 404,
-                `Project ${id} cleanup returned HTTP ${response.status()}`
-            ).toBeTruthy();
+            const endpoint = `${this.apiBasePath}/public/project/${encodeURIComponent(id)}/delete`;
+            for (let retry = 0; ; retry += 1) {
+                const response = await api.delete(endpoint);
+                const status = response.status();
+                attempts.record('API', status);
+                if (response.ok() || status === 404) {
+                    this.reportReleasedLock(id, attempts);
+                    return;
+                }
+                if (status !== PROJECT_LOCKED) {
+                    const body = await response.text().catch(() => '');
+                    throw new Error(
+                        `Project ${id} cleanup returned HTTP ${status}: ${body.slice(0, 200)}; attempts: ${attempts}`
+                    );
+                }
+
+                const remainingMs =
+                    PROJECT_LOCK_WAIT_MS - attempts.lockedForMs();
+                if (remainingMs <= 0) {
+                    // ntfy shows only the first 200 characters of the error, so the explanation goes before the long list of attempts
+                    throw new Error(
+                        `Project ${id} stayed locked (HTTP 423) for ${Math.round(attempts.lockedForMs() / 1_000)} s. ` +
+                            `The lock holder is unknown: it may be, for example, an agent from any session of the shared test account; attempts: ${attempts}`
+                    );
+                }
+                const interval =
+                    PROJECT_LOCK_RETRY_INTERVALS_MS[retry] ??
+                    PROJECT_LOCK_MAX_RETRY_INTERVAL_MS;
+                await sleep(Math.min(interval, remainingMs));
+            }
         } finally {
             await api.dispose();
         }
+    }
+
+    // A lock that went away is not a failure, but the nightly log keeps it to find out who holds the project
+    private reportReleasedLock(id: string, attempts: DeletionAttempts): void {
+        if (!attempts.wasLocked()) {
+            return;
+        }
+        const description = `Project ${id} was locked (HTTP 423) for ${(attempts.lockedForMs() / 1_000).toFixed(1)} s before deletion; attempts: ${attempts}`;
+        this.testInfo.annotations.push({ type: 'cleanup-lock', description });
+        console.log(`[cleanup] ${description}`);
     }
 
     private rememberApiBasePath(url: string): void {
@@ -491,7 +593,7 @@ export class ProjectsDsl {
     private async deleteProjectRow(
         id: string,
         title: string
-    ): Promise<string | undefined> {
+    ): Promise<{ status: number; failure?: string }> {
         const row = this.locators.projectRow(title);
         await expect(row).toBeVisible({ timeout: 30_000 });
         await this.locators.projectDeleteButton(title).click();
@@ -505,15 +607,19 @@ export class ProjectsDsl {
         );
         await this.locators.confirmDeleteButton.click();
         const response = await responsePromise;
-        if (response.status() === 404) {
-            return undefined;
+        const status = response.status();
+        if (status === 404) {
+            return { status };
         }
         // One production run got a failed delete right after the test worked with the project, so the caller retries
         if (!response.ok()) {
             const body = await response.text().catch(() => '');
-            return `Deleting project ${id} returned HTTP ${response.status()}: ${body.slice(0, 200)}`;
+            return {
+                status,
+                failure: `Deleting project ${id} returned HTTP ${status}: ${body.slice(0, 200)}`,
+            };
         }
         await expect(row).toHaveCount(0, { timeout: 30_000 });
-        return undefined;
+        return { status };
     }
 }
