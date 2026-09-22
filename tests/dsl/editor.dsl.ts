@@ -1,8 +1,16 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import {
+    expect,
+    type Locator,
+    type Page,
+    type Response,
+} from '@playwright/test';
 import { EditorLocators, type SegmentType } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
 const SEGMENT_INPUT_ATTEMPTS = 3;
+const VISIBILITY_ATTEMPTS = 3;
+// The server may answer a change of a project with HTTP 423 while another change of the same project holds its lock
+const PROJECT_LOCKED = 423;
 // Segments container in the editor starts its scroll to the end with setTimeout(1000), plus a frame of margin
 const ADDED_SEGMENT_SCROLL_DELAY_MS = 1_100;
 
@@ -491,6 +499,8 @@ export class EditorDsl {
     }
 
     async setPublicAccess(isPublic: boolean): Promise<void> {
+        // The editor saves the program about a second after its segments mount, and a visibility change overlapping that save may get HTTP 423
+        await this.waitForSaved();
         if (await this.locators.shareButton.isVisible()) {
             await this.locators.shareButton.click();
         } else {
@@ -501,21 +511,48 @@ export class EditorDsl {
             ? this.locators.publicAccessOption
             : this.locators.privateAccessOption;
 
-        if (!(await option.getAttribute('class'))?.includes('checked')) {
-            const visibilityResponse = this.page.waitForResponse(
-                (response) =>
-                    response.request().method() === 'POST' &&
-                    /\/api\/v\d+\/public\/project\/[^/]+\/visibility$/.test(
-                        new URL(response.url()).pathname
-                    ),
-                { timeout: 30_000 }
+        for (
+            let attempt = 1;
+            !(await option.getAttribute('class'))?.includes('checked');
+            attempt += 1
+        ) {
+            const response = await this.clickVisibilityOption(option);
+            if (response.ok()) {
+                break;
+            }
+
+            const body = await response.text().catch(() => '');
+            expect(
+                response.status() === PROJECT_LOCKED &&
+                    attempt < VISIBILITY_ATTEMPTS,
+                `Visibility change returned HTTP ${response.status()}: ${body.slice(0, 200)}`
+            ).toBe(true);
+            // The run log keeps every retry, so nightly runs show how often the lock is hit
+            console.log(
+                `[visibility-retry] ${new Date().toISOString()} HTTP ${response.status()} on attempt ${attempt} of ${VISIBILITY_ATTEMPTS}`
             );
-            await option.click();
-            expect((await visibilityResponse).ok()).toBeTruthy();
+            // 423 means another write holds the project lock, so wait for the editor's save and pause for writes the spinner does not show before clicking the still unchecked option again
+            await expect(this.locators.saveSpinner).toBeHidden({
+                timeout: 30_000,
+            });
+            await this.page.waitForTimeout(500);
         }
 
         await expect(option).toHaveClass(/checked/);
         await this.page.keyboard.press('Escape');
+    }
+
+    private async clickVisibilityOption(option: Locator): Promise<Response> {
+        const visibilityResponse = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'POST' &&
+                /\/api\/v\d+\/public\/project\/[^/]+\/visibility$/.test(
+                    new URL(response.url()).pathname
+                ),
+            { timeout: 30_000 }
+        );
+        await option.click();
+        return visibilityResponse;
     }
 
     private async expectSegmentText(
