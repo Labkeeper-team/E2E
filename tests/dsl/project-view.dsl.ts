@@ -6,17 +6,14 @@ import {
 
 const MOBILE_BREAKPOINT = 767;
 const STARTUP_QUIET_MS = 500;
-
-// Startup also waits for analytics calls to other hosts, so every data request counts, not only /api
-const isDataRequest = (request: Request): boolean =>
-    ['fetch', 'xhr'].includes(request.resourceType());
+const STARTUP_SETTLED = 'settled';
 
 export class ProjectViewDsl {
     private readonly locators: ProjectViewLocators;
     private navigation = 0;
     private settledNavigation = -1;
-    private pendingDataRequests = 0;
-    private lastDataActivityAt = 0;
+    private readonly pendingApiRequests = new Set<Request>();
+    private lastApiActivityAt = 0;
 
     constructor(private readonly page: Page) {
         this.locators = new ProjectViewLocators(page);
@@ -26,18 +23,14 @@ export class ProjectViewDsl {
             }
         });
         page.on('request', (request) => {
-            if (isDataRequest(request)) {
-                this.pendingDataRequests += 1;
-                this.lastDataActivityAt = Date.now();
+            if (this.isAppApiRequest(request)) {
+                this.pendingApiRequests.add(request);
+                this.lastApiActivityAt = Date.now();
             }
         });
         const finish = (request: Request) => {
-            if (isDataRequest(request)) {
-                this.pendingDataRequests = Math.max(
-                    0,
-                    this.pendingDataRequests - 1
-                );
-                this.lastDataActivityAt = Date.now();
+            if (this.pendingApiRequests.delete(request)) {
+                this.lastApiActivityAt = Date.now();
             }
         };
         page.on('requestfinished', finish);
@@ -80,19 +73,48 @@ export class ProjectViewDsl {
         await expect(pane).toBeVisible({ timeout: 60_000 });
     }
 
+    // Only the app's own /api/ calls on the page origin decide the startup screen (uri = '' in FrontendContract src/constants.ts)
+    // In Chromium, Playwright never reports the end of a request whose worker or cross-site iframe session closed before the response
+    private isAppApiRequest(request: Request): boolean {
+        if (!['fetch', 'xhr'].includes(request.resourceType())) {
+            return false;
+        }
+        const url = new URL(request.url());
+        if (!url.pathname.startsWith('/api/')) {
+            return false;
+        }
+        try {
+            return url.origin === new URL(this.page.url()).origin;
+        } catch {
+            return false;
+        }
+    }
+
+    private startupState(): string {
+        if (this.pendingApiRequests.size > 0) {
+            const pending = [...this.pendingApiRequests].map(
+                (request) =>
+                    `${request.method()} ${new URL(request.url()).pathname}`
+            );
+            return `waiting for ${pending.join(', ')}`;
+        }
+        const quietFor = Date.now() - this.lastApiActivityAt;
+        return quietFor >= STARTUP_QUIET_MS
+            ? STARTUP_SETTLED
+            : `quiet for ${quietFor} ms`;
+    }
+
     private async waitForStartupScreen(): Promise<void> {
         if (this.settledNavigation === this.navigation) {
             return;
         }
         // A never-compiled project moves a phone to the agent screen after its last startup request, so a pane chosen earlier gets hidden
         await expect
-            .poll(
-                () =>
-                    this.pendingDataRequests === 0 &&
-                    Date.now() - this.lastDataActivityAt >= STARTUP_QUIET_MS,
-                { timeout: 60_000 }
-            )
-            .toBe(true);
+            .poll(() => this.startupState(), {
+                message: 'Project startup API requests did not settle',
+                timeout: 60_000,
+            })
+            .toBe(STARTUP_SETTLED);
         this.settledNavigation = this.navigation;
     }
 }
