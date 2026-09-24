@@ -37,6 +37,20 @@ export class ResultLocators {
         return this.pdfTextLayers.getByText(text, { exact: true }).first();
     }
 
+    pdfPageWithText(text: string): Locator {
+        return this.pdfPages
+            .filter({
+                has: this.page
+                    .locator('.textLayer')
+                    .getByText(text, { exact: true }),
+            })
+            .first();
+    }
+
+    get pdfLinks(): Locator {
+        return this.container.locator('.annotationLayer .linkAnnotation > a');
+    }
+
     get pdfScrollContainer(): Locator {
         return this.pdfPages.first().locator('..');
     }
