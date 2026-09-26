@@ -14,8 +14,17 @@ interface PdfPoint {
     y: number;
 }
 
+// Kept on window by the drag: what the last selectionchange showed and the selection lengths of the latest ones
+interface PdfSelectionProbe {
+    seen: string;
+    lengths: number[];
+}
+
+type PdfSelectionWindow = { e2ePdfSelection?: PdfSelectionProbe };
+
 export class ResultDsl {
     private readonly locators: ResultLocators;
+    private lastPdfDrag?: PdfPoint & { line: string };
 
     constructor(
         private readonly page: Page,
@@ -186,26 +195,150 @@ export class ResultDsl {
         const pageEndX = pageBox.x + pageBox.width - 3;
         const lineEndX = Math.min(lineBox.x + lineBox.width - 1, pageEndX);
         const endX = Math.min(lineEndX + PDF_LINE_OVERSHOOT_PX, pageEndX);
-        await this.page.evaluate(() =>
-            window.getSelection()?.removeAllRanges()
-        );
+        await this.page.evaluate(() => {
+            window.getSelection()?.removeAllRanges();
+            const target = window as PdfSelectionWindow;
+            // Added once per document. All listeners of one selectionchange run in the same task, so what this one saw the viewer's listener saw too
+            if (!target.e2ePdfSelection) {
+                const probe: PdfSelectionProbe = { seen: '', lengths: [] };
+                target.e2ePdfSelection = probe;
+                document.addEventListener('selectionchange', () => {
+                    probe.seen = document.getSelection()?.toString() ?? '';
+                    probe.lengths = [...probe.lengths, probe.seen.length].slice(
+                        -20
+                    );
+                });
+            }
+            target.e2ePdfSelection.seen = '';
+            target.e2ePdfSelection.lengths = [];
+        });
+        this.lastPdfDrag = { x: lineBox.x + 1, y, line: text };
         await this.page.mouse.move(lineBox.x + 1, y);
         await this.page.mouse.down();
         // Firefox keeps the last letter the pointer touched, and evenly spaced steps may jump over the last one where a real hand does not
         await this.page.mouse.move(lineEndX, y, { steps: PDF_DRAG_STEPS });
+        // The viewer keeps a drag past the end of a line on that line only after its selectionchange listener has seen the selection
+        // inside the line. If the listener runs after the pointer has left the line, the selection collapses to nothing, so the
+        // drag pauses at the last letter, as a hand does, until the last dispatched selectionchange shows the current selection
+        await this.reportPdfSelectionOnFailure(() =>
+            expect
+                .poll(
+                    () =>
+                        this.page.evaluate(() => {
+                            const current =
+                                document.getSelection()?.toString() ?? '';
+                            const probe = (window as PdfSelectionWindow)
+                                .e2ePdfSelection;
+                            return current !== '' && probe?.seen === current;
+                        }),
+                    {
+                        message: `The selection did not follow the pointer along "${text}"`,
+                    }
+                )
+                .toBe(true)
+        );
         await this.page.mouse.move(endX, y, { steps: 5 });
         await this.page.mouse.up();
     }
 
     async expectPdfSelection(text: string): Promise<void> {
-        await expect
-            .poll(async () => {
-                const selection = await this.page.evaluate(
-                    () => window.getSelection()?.toString() ?? ''
-                );
-                return selection.replace(/\s+/g, ' ').trim();
-            })
-            .toBe(text);
+        await this.reportPdfSelectionOnFailure(() =>
+            expect
+                .poll(async () => {
+                    const selection = await this.page.evaluate(
+                        () => window.getSelection()?.toString() ?? ''
+                    );
+                    return selection.replace(/\s+/g, ' ').trim();
+                })
+                .toBe(text)
+        );
+    }
+
+    // The nightly run keeps only its log, so the state that tells a missed press, a late listener and a redrawn PDF apart goes there
+    private async reportPdfSelectionOnFailure(
+        check: () => Promise<void>
+    ): Promise<void> {
+        try {
+            await check();
+        } catch (error) {
+            const state = await this.describePdfSelection().catch(
+                (reason: unknown) =>
+                    `unavailable: ${String(reason).split('\n')[0]}`
+            );
+            console.log(`[pdf-selection] ${state}`);
+            throw error;
+        }
+    }
+
+    private async describePdfSelection(): Promise<string> {
+        return this.page.evaluate((drag) => {
+            const describe = (node: Node | null | undefined) => {
+                if (!node) {
+                    return null;
+                }
+                const element =
+                    node instanceof Element ? node : node.parentElement;
+                const kind =
+                    node.nodeType === Node.TEXT_NODE
+                        ? '#text'
+                        : `${node.nodeName.toLowerCase()}.${String(element?.className ?? '').split(' ')[0]}`;
+                // Only PDF text is quoted: the rest of the page shows the account's e-mail in the header
+                return element?.closest('.textLayer')
+                    ? `${kind} "${(node.textContent ?? '').slice(0, 24)}"`
+                    : kind;
+            };
+            const selection = document.getSelection();
+            const line = drag
+                ? [
+                      ...document.querySelectorAll(
+                          '.result-container .textLayer span'
+                      ),
+                  ].find((span) => span.textContent === drag.line)
+                : undefined;
+            const end = line
+                ?.closest('.textLayer')
+                ?.querySelector('.endOfContent');
+            const box = line?.getBoundingClientRect();
+            return JSON.stringify({
+                selection: !selection?.rangeCount
+                    ? 'no range'
+                    : [selection.anchorNode, selection.focusNode].every(
+                            (node) =>
+                                (node instanceof Element
+                                    ? node
+                                    : node?.parentElement
+                                )?.closest('.textLayer')
+                        )
+                      ? selection.toString().slice(0, 60)
+                      : `${selection.toString().length} characters outside the PDF`,
+                anchor: `${describe(selection?.anchorNode)}:${selection?.anchorOffset}`,
+                focus: `${describe(selection?.focusNode)}:${selection?.focusOffset}`,
+                drag,
+                line: box
+                    ? [box.x, box.y, box.width, box.height].map(Math.round)
+                    : null,
+                lineVisible: Boolean(line?.getClientRects().length),
+                atPressPoint: drag
+                    ? describe(document.elementFromPoint(drag.x, drag.y))
+                    : null,
+                endOfContent:
+                    line && end
+                        ? line.compareDocumentPosition(end) &
+                          Node.DOCUMENT_POSITION_FOLLOWING
+                            ? 'after the line'
+                            : 'before the line'
+                        : null,
+                selectionchangeLengths: (window as PdfSelectionWindow)
+                    .e2ePdfSelection?.lengths,
+                selectingLayers: document.querySelectorAll(
+                    '.textLayer.selecting'
+                ).length,
+                pdfPages: document.querySelectorAll(
+                    '.result-container [data-pdf-page]'
+                ).length,
+                active: describe(document.activeElement),
+            });
+        }, this.lastPdfDrag);
     }
 
     // The link is found by its overlap with the text and clicked in its own middle, so a text layer out of scale does not fail the link check
