@@ -150,7 +150,14 @@ export class FileManagerDsl {
 
     async expectOpenTextFileContainsText(text: string): Promise<void> {
         await this.projectView.showEditor();
-        await expect(this.files.textFileEditorContent).toContainText(text);
+        // Rendered lines are joined with line breaks, so the text may span lines like in the segment check
+        await expect
+            .poll(async () => {
+                const lines =
+                    await this.files.textFileEditorLines.allTextContents();
+                return lines.join('\n');
+            })
+            .toContain(text);
     }
 
     async waitForOpenTextFileSaved(): Promise<void> {
