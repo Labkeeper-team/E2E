@@ -1,8 +1,28 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Request } from '@playwright/test';
 import { EditorLocators, FileManagerLocators } from './locators';
 import { ProjectViewDsl } from './project-view.dsl';
 
 const TEXT_FILE_INPUT_ATTEMPTS = 3;
+// The segments save the program about a second after they mount again: in local runs against production the save started 0.8-1.0 s after the file editor was hidden, but up to 2 s after the click in WebKit, so the window counts from the moment the editor is hidden
+const PROGRAM_SAVE_START_TIMEOUT_MS = 3_000;
+// As long as the file manager waits for its own writes
+const PROGRAM_SAVE_RESPONSE_TIMEOUT_MS = 30_000;
+const TIMED_OUT = Symbol('timed out');
+
+async function settledWithin<T>(
+    promise: Promise<T>,
+    timeoutMs: number
+): Promise<T | typeof TIMED_OUT> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timedOut = new Promise<typeof TIMED_OUT>((resolve) => {
+        timer = setTimeout(() => resolve(TIMED_OUT), timeoutMs);
+    });
+    try {
+        return await Promise.race([promise, timedOut]);
+    } finally {
+        clearTimeout(timer);
+    }
+}
 
 export class FileManagerDsl {
     private readonly editor: EditorLocators;
@@ -125,9 +145,23 @@ export class FileManagerDsl {
 
     async closeTextFile(): Promise<void> {
         await this.projectView.showEditor();
-        await this.files.closeTextFileEditorButton.click();
-        await expect(this.files.textFileEditor).toBeHidden();
-        this.openTextFileName = undefined;
+        const fileName = this.openTextFileName;
+        // Closing the file mounts the segments again, and about a second later they save the program even without changes. That save holds the project lock, so a file manager write overlapping it may get HTTP 423
+        const programSave = this.listenForProgramSave();
+        try {
+            await this.files.closeTextFileEditorButton.click();
+            await expect(this.files.textFileEditor).toBeHidden();
+            this.openTextFileName = undefined;
+            const problem = await this.programSaveProblem(programSave.started);
+            if (problem) {
+                // The step goes on, and the run log shows how often the save after closing is missing or rejected
+                console.log(
+                    `[close-save] ${new Date().toISOString()} after closing ${fileName ?? 'a text file'}: ${problem}`
+                );
+            }
+        } finally {
+            programSave.stop();
+        }
         await this.projectView.showFiles();
     }
 
@@ -422,6 +456,58 @@ export class FileManagerDsl {
             },
             { timeout: 30_000 }
         );
+    }
+
+    // The listener is on before the click, so a save that starts while the file editor is still closing is not missed
+    private listenForProgramSave(): {
+        started: Promise<Request>;
+        stop: () => void;
+    } {
+        let resolveStarted!: (request: Request) => void;
+        const started = new Promise<Request>((resolve) => {
+            resolveStarted = resolve;
+        });
+        const onRequest = (request: Request) => {
+            if (
+                request.method() === 'POST' &&
+                /\/api\/v\d+\/public\/project\/[^/]+\/program$/.test(
+                    new URL(request.url()).pathname
+                )
+            ) {
+                resolveStarted(request);
+            }
+        };
+        this.page.on('request', onRequest);
+        return {
+            started,
+            stop: () => this.page.off('request', onRequest),
+        };
+    }
+
+    private async programSaveProblem(
+        started: Promise<Request>
+    ): Promise<string | undefined> {
+        const request = await settledWithin(
+            started,
+            PROGRAM_SAVE_START_TIMEOUT_MS
+        );
+        if (request === TIMED_OUT) {
+            return `no program save within ${PROGRAM_SAVE_START_TIMEOUT_MS} ms`;
+        }
+
+        const response = await settledWithin(
+            request.response().catch(() => null),
+            PROGRAM_SAVE_RESPONSE_TIMEOUT_MS
+        );
+        if (response === TIMED_OUT) {
+            return `program save got no response within ${PROGRAM_SAVE_RESPONSE_TIMEOUT_MS} ms`;
+        }
+        if (!response) {
+            return `program save failed: ${request.failure()?.errorText ?? 'no response'}`;
+        }
+        return response.ok()
+            ? undefined
+            : `program save returned HTTP ${response.status()}`;
     }
 
     private waitForFolderMutation(method: string, operation: string) {
