@@ -183,6 +183,11 @@ export class EditorPerformanceDsl {
                         await this.moveToDocumentEnd(segment);
                     }
                     await segment.press('Enter');
+                    // CodeMirror on Chrome Android defers Enter until the next frame and drops it if a keystroke changes the document first, so the tail waits for its own line
+                    await this.editor.expectSegmentContainsText(
+                        0,
+                        `${previousTail}\n`
+                    );
                     await segment.pressSequentially(tail, { delay: 10 });
                     await this.editor.expectSegmentContainsText(
                         0,
@@ -218,6 +223,10 @@ export class EditorPerformanceDsl {
         const fileName = 'performance-large-file.tex';
         const headMarker = '% head-performance-marker ';
         const tailMarker = '% tail-performance-marker';
+        const lastLine = this.largeDocumentLine(
+            '% File',
+            LARGE_DOCUMENT_LINE_COUNT
+        );
 
         await this.files.open();
         await this.files.uploadTextFile(
@@ -230,15 +239,17 @@ export class EditorPerformanceDsl {
         await expect(fileEditor).toBeEditable({ timeout: 30_000 });
         await fileEditor.focus();
         await this.moveToDocumentEnd(fileEditor);
-        await this.files.expectOpenTextFileContainsText(
-            this.largeDocumentLine('% File', LARGE_DOCUMENT_LINE_COUNT)
-        );
+        await this.files.expectOpenTextFileContainsText(lastLine);
 
         const report = await this.measure(
             'long-file-editing',
             fileEditor,
             async () => {
                 await fileEditor.press('Enter');
+                // CodeMirror on Chrome Android defers Enter until the next frame and drops it if a keystroke changes the document first
+                await this.files.expectOpenTextFileContainsText(
+                    `${lastLine}\n`
+                );
                 await fileEditor.pressSequentially(tailMarker, { delay: 10 });
                 await this.files.expectOpenTextFileContainsText(tailMarker);
 
