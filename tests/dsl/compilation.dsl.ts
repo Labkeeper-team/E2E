@@ -28,6 +28,11 @@ export interface CompilationResult {
     url: string;
 }
 
+export type AutomaticCompilation =
+    | { outcome: 'pdf'; pdfUri: string }
+    | { outcome: 'markdown' }
+    | { outcome: 'loginRequired' };
+
 export type GuestPdfRunResult =
     | { outcome: 'compiled'; pdfUri: string }
     | { outcome: 'loginRequired' };
@@ -58,6 +63,36 @@ export class CompilationDsl {
             status: response.status(),
             url: response.url(),
         };
+    }
+
+    /**
+     * Starts waiting for the compilation the editor sends by itself, for example right after an example link opens it.
+     * Call it before the action that opens the editor and await the result after
+     */
+    waitForAutomaticCompilation(): Promise<AutomaticCompilation> {
+        this.responses.restart();
+        const compilation = this.page
+            .waitForResponse(isCompilationResponse, { timeout: 120_000 })
+            .then(async (response) => {
+                // HTTP 425 is the daily anonymous limit, and the editor answers it with the login modal
+                if (response.status() === 425) {
+                    return { outcome: 'loginRequired' } as const;
+                }
+                if (!new URL(response.url()).pathname.endsWith('/pdf')) {
+                    expect(
+                        response.status(),
+                        `Markdown compilation returned HTTP ${response.status()}`
+                    ).toBe(200);
+                    return { outcome: 'markdown' } as const;
+                }
+                return {
+                    outcome: 'pdf',
+                    pdfUri: await this.pdfUriOf(response),
+                } as const;
+            });
+        // A step failing before the await would otherwise leave the rejection unhandled
+        compilation.catch(() => undefined);
+        return compilation;
     }
 
     async runPdfAsGuest(): Promise<GuestPdfRunResult> {
@@ -98,8 +133,9 @@ export class CompilationDsl {
         const response = await this.clickRunAndWaitForResponse(async () => {
             await expect(this.locators.compilingRunButton).toBeVisible();
         });
+        // A guest's default project has no id and compiles at /public/compile/pdf
         expect(new URL(response.url()).pathname).toMatch(
-            /\/project\/[^/]+\/compile\/pdf$/
+            /\/public\/(?:project\/[^/]+\/)?compile\/pdf$/
         );
         await expect(this.locators.enabledRunButton).toBeAttached({
             timeout: 60_000,
@@ -107,8 +143,22 @@ export class CompilationDsl {
         return response;
     }
 
+    /** Compiles with a keyboard shortcut instead of the Run button and expects the given HTTP status */
+    async runWithKeys(keys: string, expectedStatus = 200): Promise<void> {
+        await this.projectView.showEditor();
+        const response = await this.clickRunAndWaitForResponse(
+            undefined,
+            () => this.page.keyboard.press(keys)
+        );
+        expect(response.status()).toBe(expectedStatus);
+        await expect(this.locators.enabledRunButton).toBeAttached({
+            timeout: 60_000,
+        });
+    }
+
     private async clickRunAndWaitForResponse(
-        afterClick?: () => Promise<void>
+        afterClick?: () => Promise<void>,
+        start: () => Promise<void> = () => this.locators.runButton.click()
     ): Promise<Response> {
         const requestSent = this.page
             .waitForRequest(isCompilationRequest, { timeout: 30_000 })
@@ -122,7 +172,7 @@ export class CompilationDsl {
         );
         responsePromise.catch(() => undefined);
 
-        await this.locators.runButton.click();
+        await start();
         await afterClick?.();
         // A single timeout could not tell a lost click from a slow compiler, so the two waits fail separately
         if (!(await requestSent)) {

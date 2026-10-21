@@ -59,6 +59,26 @@ export class ResultLocators {
         return this.container.locator('.result-markdown');
     }
 
+    get diagrams(): Locator {
+        return this.container.locator('.result-diagram');
+    }
+
+    diagram(index: number): Locator {
+        return this.diagrams.nth(index);
+    }
+
+    diagramPicture(index: number): Locator {
+        return this.diagram(index).locator('.result-diagram__picture');
+    }
+
+    diagramError(index: number): Locator {
+        return this.diagram(index).locator('.result-diagram__error');
+    }
+
+    get resultText(): Locator {
+        return this.container.locator('.result-markdown, .result-segment');
+    }
+
     get plot(): Locator {
         return this.container.locator('.plot-container');
     }

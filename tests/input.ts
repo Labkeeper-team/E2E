@@ -66,12 +66,17 @@ export const input = Object.freeze({
         process.env.E2E_PROJECT_PREFIX?.trim() || DEFAULT_PROJECT_PREFIX
     ),
     landingTests: optionalEnvironmentValue('ENABLE_LANDING_TESTS'),
+    agentTests: optionalEnvironmentValue('ENABLE_AGENT_TESTS'),
 });
 
+const flagEnabled = (value: string | undefined): boolean =>
+    value !== undefined && !disabledFlagValues.has(value.toLowerCase());
+
 // Only production serves the landing, so stands answering / with the editor bundle leave the flag unset
-export const landingTestsEnabled =
-    input.landingTests !== undefined &&
-    !disabledFlagValues.has(input.landingTests.toLowerCase());
+export const landingTestsEnabled = flagEnabled(input.landingTests);
+
+// Agent requests spend tokens of the test account, so a regular run leaves them out
+export const agentTestsEnabled = flagEnabled(input.agentTests);
 
 export interface UserCredentials {
     email: string;

@@ -8,6 +8,8 @@ const PDF_RENDER_TIMEOUT_MS = 60_000;
 // A reader's drag along a line ends in the empty page after it, where Firefox and WebKit used to move the selection to the start of the page
 const PDF_LINE_OVERSHOOT_PX = 40;
 const PDF_DRAG_STEPS = 40;
+// Two framed boxes with an arrow darken thousands of pixels, a stray anti-aliased dot does not
+const MIN_DRAWN_PIXELS = 500;
 
 interface PdfPoint {
     x: number;
@@ -54,6 +56,62 @@ export class ResultDsl {
         await expect
             .poll(() => this.readPdfText(), { timeout: 60_000 })
             .not.toBe('');
+    }
+
+    /** For a PDF without text, such as a page holding only a picture */
+    async expectPdfLoadedFrom(pdfUri: string): Promise<void> {
+        await expect
+            .poll(() => this.responses.hasLoaded(pdfUri), {
+                message: `The viewer did not load ${pdfUri}`,
+                timeout: 60_000,
+            })
+            .toBe(true);
+        await this.expectPdf();
+    }
+
+    /**
+     * A diagram goes into the PDF as a picture, so its labels never reach the text layer.
+     * The page is checked for drawn pixels instead: an empty page has none besides the white
+     */
+    async expectPdfPageDrawing(pageNumber: number): Promise<void> {
+        await this.projectView.showPdf();
+        const canvas = this.locators.pdfPageCanvas(pageNumber);
+        await expect(canvas).toBeVisible({ timeout: PDF_RENDER_TIMEOUT_MS });
+        await expect
+            .poll(
+                () =>
+                    canvas.evaluate((element) => {
+                        if (!(element instanceof HTMLCanvasElement)) {
+                            return 0;
+                        }
+                        const context = element.getContext('2d');
+                        if (!context) {
+                            return 0;
+                        }
+                        const { data } = context.getImageData(
+                            0,
+                            0,
+                            element.width,
+                            element.height
+                        );
+                        let drawn = 0;
+                        for (let index = 0; index < data.length; index += 4) {
+                            if (
+                                data[index] < 200 ||
+                                data[index + 1] < 200 ||
+                                data[index + 2] < 200
+                            ) {
+                                drawn += 1;
+                            }
+                        }
+                        return drawn;
+                    }),
+                {
+                    message: `PDF page ${pageNumber} has nothing drawn on it`,
+                    timeout: PDF_RENDER_TIMEOUT_MS,
+                }
+            )
+            .toBeGreaterThan(MIN_DRAWN_PIXELS);
     }
 
     async readPdfText(): Promise<string> {
@@ -417,6 +475,70 @@ export class ResultDsl {
         await expect(this.locators.markdown.getByText(text)).toBeVisible({
             timeout: 30_000,
         });
+    }
+
+    /**
+     * Mermaid draws an inline SVG, PlantUML and draw.io draw a picture whose SVG sits in a data URL,
+     * so the text of the diagram is read from whichever of them the segment shows
+     */
+    async expectDiagramText(index: number, texts: string[]): Promise<void> {
+        await this.projectView.showPdf();
+        const picture = this.locators.diagramPicture(index);
+        await expect(picture).toBeVisible({ timeout: 60_000 });
+        const readText = () =>
+            picture.evaluate((element) => {
+                if (!(element instanceof HTMLImageElement)) {
+                    return element.textContent ?? '';
+                }
+                const source = element.src;
+                const comma = source.indexOf(',');
+                const data = source.slice(comma + 1);
+                if (!source.slice(0, comma).endsWith(';base64')) {
+                    return decodeURIComponent(data);
+                }
+                const bytes = Uint8Array.from(atob(data), (char) =>
+                    char.charCodeAt(0)
+                );
+                return new TextDecoder().decode(bytes);
+            });
+        await expect
+            .poll(
+                async () => {
+                    const text = await readText();
+                    return texts.filter((expected) => !text.includes(expected));
+                },
+                {
+                    message: `Diagram ${index} misses some of its labels`,
+                    timeout: 60_000,
+                }
+            )
+            .toEqual([]);
+        await expect(this.locators.diagramError(index)).toBeHidden();
+    }
+
+    async expectDiagramError(index: number, text?: string): Promise<void> {
+        await this.projectView.showPdf();
+        const error = this.locators.diagramError(index);
+        await expect(error).toBeVisible({ timeout: 60_000 });
+        await expect(error).toContainText('The diagram could not be drawn');
+        if (text !== undefined) {
+            await expect(error).toContainText(text);
+        }
+        await expect(this.locators.diagramPicture(index)).toBeHidden();
+    }
+
+    /** Text of the final document with the spaces dropped, so a MathJax formula reads as a=1 */
+    async expectResultTextContains(text: string): Promise<void> {
+        await this.projectView.showPdf();
+        await expect
+            .poll(
+                async () =>
+                    (await this.locators.resultText.allTextContents())
+                        .join('')
+                        .replace(/\s+/g, ''),
+                { timeout: 60_000 }
+            )
+            .toContain(text.replace(/\s+/g, ''));
     }
 
     async expectPlot(title?: string | RegExp): Promise<void> {

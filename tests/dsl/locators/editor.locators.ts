@@ -4,7 +4,14 @@ export type SegmentType =
     | 'Markdown'
     | 'Computation'
     | 'Simple-formula'
-    | 'Latex';
+    | 'Latex'
+    | 'Mermaid'
+    | 'PlantUML'
+    | 'draw.io';
+
+// draw.io has a dot, which a menu label pattern has to match literally
+const exactLabel = (label: string): RegExp =>
+    new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
 
 export class EditorLocators {
     constructor(private readonly page: Page) {}
@@ -36,7 +43,7 @@ export class EditorLocators {
     segmentOption(type: SegmentType): Locator {
         return this.page
             .getByRole('listitem')
-            .filter({ hasText: new RegExp(`^${type}$`, 'i') });
+            .filter({ hasText: exactLabel(type) });
     }
 
     get segmentEditors(): Locator {
@@ -65,6 +72,10 @@ export class EditorLocators {
 
     segmentContainer(index: number): Locator {
         return this.segmentContainers.nth(index);
+    }
+
+    segmentTypeLabel(index: number): Locator {
+        return this.segmentContainer(index).locator('.segment-type-container');
     }
 
     segmentEditorHost(index: number): Locator {
@@ -110,7 +121,7 @@ export class EditorLocators {
             .locator('.segment-divider')
             .nth(index)
             .locator('.divider-dropdown button')
-            .filter({ hasText: new RegExp(`^${type}$`, 'i') });
+            .filter({ hasText: exactLabel(type) });
     }
 
     get moveButtons(): Locator {

@@ -1,5 +1,17 @@
 import { expect, type Page } from '@playwright/test';
-import { LandingLocators } from './locators';
+import { EditorLocators, LandingLocators } from './locators';
+
+// What the blog example button puts into the editor, read from its link
+export interface BlogExample {
+    open?: string;
+    compute?: string;
+    latex?: string;
+    markdown?: string;
+}
+
+const EXAMPLE_BUTTON_LABEL = 'Просмотреть пример';
+const EXAMPLE_BUTTON_HINT = 'в редакторе';
+const BLOG_PAGE_LIMIT = 30;
 
 export interface ExampleProject {
     id: string;
@@ -123,6 +135,72 @@ export class LandingDsl {
                 { intervals: [250], timeout: 15_000 }
             )
             .toBe(true);
+    }
+
+    async openKnowledgeBase(): Promise<void> {
+        await this.locators.knowledgeSection.scrollIntoViewIfNeeded();
+        await expect(this.locators.knowledgeTitle).toHaveText('База знаний');
+        await expect(this.locators.allArticlesLink).toBeVisible();
+    }
+
+    async openAllArticles(): Promise<void> {
+        await this.locators.allArticlesLink.click();
+        await expect(this.page).toHaveURL(/\/blog\/?$/, { timeout: 60_000 });
+    }
+
+    async openBlog(): Promise<void> {
+        await this.page.goto('/blog', {
+            waitUntil: 'domcontentloaded',
+            timeout: 60_000,
+        });
+    }
+
+    async openArticle(slug: string, title: string): Promise<void> {
+        const card = this.locators.blogCard(slug);
+        await expect(this.locators.blogNextPageButton).toBeAttached({
+            timeout: 30_000,
+        });
+        // The list shows nine articles per page, newest first, so the page of an article moves as the blog grows
+        for (let page = 1; !(await card.isVisible()); page += 1) {
+            expect(
+                await this.locators.blogNextPageButton.isEnabled(),
+                `No blog page lists /blog/${slug}`
+            ).toBe(true);
+            expect(page, `/blog/${slug} is not on the first pages`).toBeLessThan(
+                BLOG_PAGE_LIMIT
+            );
+            await this.locators.blogNextPageButton.click();
+        }
+        await card.scrollIntoViewIfNeeded();
+        await card.click();
+        await expect(this.page).toHaveURL(new RegExp(`/blog/${slug}$`), {
+            timeout: 60_000,
+        });
+        // The list card carries a shorter title than the article itself
+        await expect(this.locators.articleTitle).toHaveText(title);
+    }
+
+    async openArticleExample(): Promise<BlogExample> {
+        const button = this.locators.visibleExampleButton;
+        await button.scrollIntoViewIfNeeded();
+        await expect(button).toContainText(EXAMPLE_BUTTON_LABEL);
+        await expect(button).toContainText(EXAMPLE_BUTTON_HINT);
+        const href = await button.getAttribute('href');
+        expect(href, 'The example button has no link').toBeTruthy();
+        const query = new URL(href as string, this.page.url()).searchParams;
+        const example: BlogExample = {
+            open: query.get('open') ?? undefined,
+            compute: query.get('compute') ?? undefined,
+            latex: query.get('latex') ?? undefined,
+            markdown: query.get('markdown') ?? undefined,
+        };
+        await button.click();
+        await expect(this.page).toHaveURL(/\/project\//, { timeout: 60_000 });
+        await new EditorLocators(this.page).editorRoot.waitFor({
+            state: 'visible',
+            timeout: 60_000,
+        });
+        return example;
     }
 
     async clickExample(projectId: string): Promise<void> {

@@ -1,10 +1,12 @@
 import type { Page, TestInfo } from '@playwright/test';
 import { AccessDsl } from './access.dsl';
+import { AgentDsl } from './agent.dsl';
 import { AuthDsl } from './auth.dsl';
 import { CompilationDsl } from './compilation.dsl';
 import { EditorPerformanceDsl } from './editor-performance.dsl';
 import { EditorDsl } from './editor.dsl';
 import { FileManagerDsl } from './file-manager.dsl';
+import { HotkeysDsl } from './hotkeys.dsl';
 import { LandingDsl } from './landing.dsl';
 import { NavigationDsl } from './navigation.dsl';
 import { ProjectViewDsl } from './project-view.dsl';
@@ -17,10 +19,12 @@ import { ResultDsl } from './result.dsl';
 
 export class LabkeeperDsl {
     readonly access: AccessDsl;
+    readonly agent: AgentDsl;
     readonly auth: AuthDsl;
     readonly compilation: CompilationDsl;
     readonly editor: EditorDsl;
     readonly files: FileManagerDsl;
+    readonly hotkeys: HotkeysDsl;
     readonly landing: LandingDsl;
     readonly navigation: NavigationDsl;
     readonly performance: EditorPerformanceDsl;
@@ -35,10 +39,12 @@ export class LabkeeperDsl {
         const responses = new ResponseRecorder(page);
 
         this.access = new AccessDsl(page);
+        this.agent = new AgentDsl(page);
         this.auth = new AuthDsl(page);
         this.compilation = new CompilationDsl(page, projectView, responses);
         this.editor = new EditorDsl(page, projectView);
         this.files = new FileManagerDsl(page, projectView);
+        this.hotkeys = new HotkeysDsl(page);
         this.landing = new LandingDsl(page);
         this.navigation = new NavigationDsl(page);
         this.projects = new ProjectsDsl(page, testInfo);
