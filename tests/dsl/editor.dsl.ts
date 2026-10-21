@@ -64,6 +64,20 @@ export class EditorDsl {
         return index;
     }
 
+    async expectAddSegmentOptions(types: SegmentType[]): Promise<void> {
+        await this.projectView.showEditor();
+        const select =
+            (await this.locators.segmentEditors.count()) === 0
+                ? this.locators.emptyProjectAddSegmentSelect
+                : this.locators.addSegmentSelect;
+        await select.click();
+        for (const type of types) {
+            await expect(this.locators.segmentOption(type)).toBeVisible();
+        }
+        await select.click();
+        await expect(this.locators.segmentOption(types[0])).toBeHidden();
+    }
+
     async addSegmentBetween(
         dividerIndex: number,
         type: SegmentType,
@@ -129,6 +143,16 @@ export class EditorDsl {
         const editor = this.locators.segmentEditor(index);
         await this.focusSegment(index, editor);
         await editor.press('Control+End');
+        await this.page.keyboard.insertText(text);
+    }
+
+    async placeCursorAtSegmentEnd(index: number): Promise<void> {
+        const editor = this.locators.segmentEditor(index);
+        await this.focusSegment(index, editor);
+        await editor.press('Control+End');
+    }
+
+    async typeInFocusedSegment(text: string): Promise<void> {
         await this.page.keyboard.insertText(text);
     }
 
@@ -241,6 +265,25 @@ export class EditorDsl {
                 return lines.join('\n');
             })
             .toContain(text);
+    }
+
+    async expectAnySegmentContainsText(text: string): Promise<void> {
+        await this.projectView.showEditor();
+        await expect
+            .poll(async () =>
+                (await this.locators.segmentEditors.allTextContents()).join('\n')
+            )
+            .toContain(text);
+    }
+
+    async expectSegmentType(index: number, label: string): Promise<void> {
+        await this.projectView.showEditor();
+        await expect(this.locators.segmentTypeLabel(index)).toHaveText(label);
+    }
+
+    async readSegmentText(index: number): Promise<string> {
+        await this.projectView.showEditor();
+        return this.segmentText(index);
     }
 
     async expectLatexBoundaryCards(): Promise<void> {

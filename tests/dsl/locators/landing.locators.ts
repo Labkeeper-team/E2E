@@ -46,4 +46,35 @@ export class LandingLocators {
             `#projects-container a.example-card[href$="/project/${projectId}"]`
         );
     }
+
+    get knowledgeSection(): Locator {
+        return this.page.locator('section#knowledge');
+    }
+
+    get knowledgeTitle(): Locator {
+        return this.knowledgeSection.locator('.knowledge__title');
+    }
+
+    get allArticlesLink(): Locator {
+        return this.knowledgeSection.locator('a[href="/blog"]');
+    }
+
+    blogCard(slug: string): Locator {
+        return this.page.locator(`a.blog-card[href="/blog/${slug}"]`);
+    }
+
+    get blogNextPageButton(): Locator {
+        return this.page
+            .locator('#blog-pagination .blog-pagination__btn')
+            .filter({ hasText: /^→$/ });
+    }
+
+    get articleTitle(): Locator {
+        return this.page.locator('h1').first();
+    }
+
+    // The article repeats the button in its sidebar, which a narrow page hides
+    get visibleExampleButton(): Locator {
+        return this.page.locator('a[data-blog-example]:visible').first();
+    }
 }
