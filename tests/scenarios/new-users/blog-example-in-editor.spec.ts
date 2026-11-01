@@ -38,7 +38,7 @@ const PRINTED_PRECISION = 0.1;
 function intervalInPdf(text: string): [number, number] | undefined {
     const match = text
         .replace(/\s+/g, '')
-        .match(/Interval:\[(-?\d+(?:\.\d+)?);(-?\d+(?:\.\d+)?)\]/);
+        .match(/Интервал:\[(-?\d+(?:\.\d+)?);(-?\d+(?:\.\d+)?)\]/);
     return match ? [Number(match[1]), Number(match[2])] : undefined;
 }
 
@@ -102,7 +102,12 @@ test.describe('New user blog example scenarios', () => {
             );
             const startup = app.compilation.waitForAutomaticCompilation();
             const example = await app.landing.openArticleExample();
-            expect(example.open).toBe('latex');
+            expect(example.slug).toBe(INTERVAL_ARTICLE.slug);
+            // A computation segment opens the example as a LaTeX project
+            expect(example.segments.map((segment) => segment.type)).toEqual([
+                'computational',
+                'latex',
+            ]);
 
             await app.editor.expectLatexBoundaryCards();
             await app.editor.expectSegmentCount(2);
@@ -110,7 +115,7 @@ test.describe('New user blog example scenarios', () => {
             await app.editor.expectSegmentType(computationIndex, 'Computation');
             await app.editor.expectSegmentContainsText(
                 computationIndex,
-                example.compute as string
+                example.segments[0].text
             );
             await app.editor.expectSegmentContainsText(
                 computationIndex,
@@ -119,7 +124,7 @@ test.describe('New user blog example scenarios', () => {
             await app.editor.expectSegmentType(1, 'Latex');
             await app.editor.expectSegmentContainsText(
                 1,
-                example.latex as string
+                example.segments[1].text
             );
             compilation = await startup;
         });
@@ -165,18 +170,28 @@ test.describe('New user blog example scenarios', () => {
             );
             const startup = app.compilation.waitForAutomaticCompilation();
             const example = await app.landing.openArticleExample();
-            // This link opens a Markdown project with one segment, unlike the scenario text that expects a LaTeX segment and a PDF
-            expect(example.open).toBe('markdown');
+            expect(example.slug).toBe(MARKUP_ARTICLE.slug);
+            // The example puts a table of contents before the Markdown text, so it opens as a LaTeX project with a PDF
+            expect(example.segments.map((segment) => segment.type)).toEqual([
+                'latex',
+                'md',
+            ]);
 
-            await app.editor.expectSegmentCount(1);
-            await app.editor.expectSegmentType(0, 'Markdown');
+            await app.editor.expectLatexBoundaryCards();
+            await app.editor.expectSegmentCount(2);
+            await app.editor.expectSegmentType(0, 'Latex');
             await app.editor.expectSegmentContainsText(
                 0,
-                example.markdown as string
+                example.segments[0].text
             );
-            await app.editor.expectSegmentContainsText(0, '## Введение');
+            await app.editor.expectSegmentType(1, 'Markdown');
+            await app.editor.expectSegmentContainsText(
+                1,
+                example.segments[1].text
+            );
+            await app.editor.expectSegmentContainsText(1, '# Введение');
             // The guest's previous example is replaced, so its measurements are gone
-            expect(await app.editor.readSegmentText(0)).not.toContain(
+            expect(await app.editor.readSegmentText(1)).not.toContain(
                 MEASUREMENTS
             );
             compilation = await startup;
@@ -186,8 +201,11 @@ test.describe('New user blog example scenarios', () => {
         }
 
         await test.step('shows the introduction of the markup example in the final document', async () => {
-            expect(compilation.outcome).toBe('markdown');
-            await app.results.expectMarkdownText('Введение');
+            expect(compilation.outcome).toBe('pdf');
+            await app.results.expectPdfFrom(
+                (compilation as { pdfUri: string }).pdfUri
+            );
+            await app.results.expectPdfTextContains('Введение');
         });
     });
 });

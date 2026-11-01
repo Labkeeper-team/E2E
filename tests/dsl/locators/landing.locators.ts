@@ -27,23 +27,25 @@ export class LandingLocators {
         return this.page.locator('nav.js-nav.header__nav--open');
     }
 
-    get examplesLink(): Locator {
-        return this.page.locator('nav.js-nav a[href="#examples"]');
+    get templatesLink(): Locator {
+        return this.page.locator('nav.js-nav a[href="/templates"]');
     }
 
-    get examplesSection(): Locator {
-        return this.page.locator('section#examples');
+    templatesFilter(filter: string): Locator {
+        return this.page.locator(`#blog-categories a[data-filter="${filter}"]`);
     }
 
-    categoryTab(category: string): Locator {
+    // Each card lists its categories, project type included, in data-category
+    templateCards(category: string): Locator {
         return this.page.locator(
-            `#project-categories a[data-category="${category}"]`
+            `#blog-grid article.blog-item[data-category~="${category}"]:visible`
         );
     }
 
-    exampleCard(projectId: string): Locator {
+    // The card opens the template project in a new tab
+    templateProjectLink(projectId: string): Locator {
         return this.page.locator(
-            `#projects-container a.example-card[href$="/project/${projectId}"]`
+            `#blog-grid a.blog-card__footer[href$="/project/${projectId}"]`
         );
     }
 
