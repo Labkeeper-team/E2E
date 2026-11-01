@@ -7,7 +7,7 @@ import {
 
 // Each guest run spends the shared daily anonymous limit, so the scenario stops after a few of them
 const GUEST_RUNS = 3;
-// Other LaTeX examples include project files, which a guest compilation cannot read
+// Other LaTeX templates include project files, which a guest compilation cannot read
 const GUEST_COMPILABLE_CATEGORY = 'diploma';
 const LOGIN_REQUIRED_PROBLEM = 'Login is required to proceed';
 
@@ -18,7 +18,7 @@ test.describe('New user LaTeX preview scenarios', () => {
         'Landing scenarios need ENABLE_LANDING_TESTS'
     );
 
-    test('compiles a LaTeX example as a guest, logs in and compiles its clone @authenticated @scenario', async ({
+    test('compiles a LaTeX template as a guest, logs in and compiles its clone @authenticated @scenario', async ({
         app,
     }) => {
         test.setTimeout(10 * 60_000);
@@ -34,17 +34,15 @@ test.describe('New user LaTeX preview scenarios', () => {
         let guestLimitReached = false;
         let cloneName = '';
 
-        await test.step('opens a LaTeX example from the landing examples', async () => {
-            const examples = await app.landing.open();
+        await test.step('opens a LaTeX template from the landing catalog', async () => {
+            await app.landing.open();
             await app.landing.declineCookies();
-            await app.landing.openExamples();
-            exampleId = (
-                await app.landing.chooseLatexExample(
-                    examples,
-                    GUEST_COMPILABLE_CATEGORY
-                )
-            ).id;
-            await app.landing.clickExample(exampleId);
+            await app.landing.openTemplates();
+            exampleId = await app.landing.chooseTemplate(
+                GUEST_COMPILABLE_CATEGORY,
+                'latex'
+            );
+            await app.landing.clickTemplate(exampleId);
             await app.navigation.openEditor(`/project/${exampleId}`);
             await app.editor.expectReadOnlyPublicProject();
         });
@@ -57,7 +55,7 @@ test.describe('New user LaTeX preview scenarios', () => {
         const guestProfile = profileNames.at(-1);
         const runsAsGuest = test.info().project.name === guestProfile;
 
-        await test.step('compiles the example as a guest several times', async () => {
+        await test.step('compiles the template as a guest several times', async () => {
             if (!runsAsGuest) {
                 test.info().annotations.push({
                     type: 'guest compilations',
@@ -115,12 +113,12 @@ test.describe('New user LaTeX preview scenarios', () => {
             });
         });
 
-        await test.step('returns to the example and clones it', async () => {
+        await test.step('returns to the template and clones it', async () => {
             await app.navigation.openEditor(`/project/${exampleId}`);
             await app.editor.expectReadOnlyPublicProject();
             await app.projects.cloneOpenedProject(user);
             await app.editor.expectOwnEditableProject();
-            // The clone keeps the example title, which matches several rows in the list of a permanent account
+            // The clone keeps the template title, which matches several rows in the list of a permanent account
             cloneName = app.projects.uniqueProjectName('preview-clone');
             await app.editor.renameProjectWithEnter(cloneName);
         });

@@ -1,23 +1,16 @@
 import { expect, type Page } from '@playwright/test';
 import { EditorLocators, LandingLocators } from './locators';
 
-// What the blog example button puts into the editor, read from its link
+// The blog example button opens the editor with the program the API keeps for the article
 export interface BlogExample {
-    open?: string;
-    compute?: string;
-    latex?: string;
-    markdown?: string;
+    slug: string;
+    segments: { type: string; text: string }[];
 }
 
 const EXAMPLE_BUTTON_LABEL = 'Просмотреть пример';
 const EXAMPLE_BUTTON_HINT = 'в редакторе';
 const BLOG_PAGE_LIMIT = 30;
-
-export interface ExampleProject {
-    id: string;
-    category: string;
-    projectType: string;
-}
+const PROJECT_LINK = /\/project\/([0-9a-f-]{36})$/;
 
 export class LandingDsl {
     private readonly locators: LandingLocators;
@@ -26,13 +19,14 @@ export class LandingDsl {
         this.locators = new LandingLocators(page);
     }
 
-    async open(): Promise<ExampleProject[]> {
+    async open(): Promise<void> {
         let lastError: unknown;
 
         // Same as NavigationDsl: the first navigation of a fresh browser is occasionally aborted
         for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-                return await this.openOnce();
+                await this.openOnce();
+                return;
             } catch (error) {
                 lastError = error;
             }
@@ -41,35 +35,15 @@ export class LandingDsl {
         throw lastError;
     }
 
-    private async openOnce(): Promise<ExampleProject[]> {
-        const previewResponse = this.page.waitForResponse(
-            (response) =>
-                response.request().method() === 'GET' &&
-                /\/api\/v\d+\/public\/preview$/.test(
-                    new URL(response.url()).pathname
-                ),
-            { timeout: 60_000 }
-        );
-        previewResponse.catch(() => undefined);
+    private async openOnce(): Promise<void> {
         await this.page.goto('/', {
             waitUntil: 'domcontentloaded',
             timeout: 60_000,
         });
-        const response = await previewResponse;
-        // The landing silently falls back to bundled examples, so a failed request must fail here
-        expect(
-            response.ok(),
-            `Landing examples returned HTTP ${response.status()}`
-        ).toBeTruthy();
         await expect(this.locators.preloader).toHaveClass(/preloader--hidden/, {
             timeout: 30_000,
         });
         await expect(this.locators.loginLink).toBeVisible({ timeout: 30_000 });
-
-        const { projects } = (await response.json()) as {
-            projects: ExampleProject[];
-        };
-        return projects;
     }
 
     async declineCookies(): Promise<void> {
@@ -79,62 +53,43 @@ export class LandingDsl {
         await expect(this.locators.cookieBanner).toHaveClass(/\bhidden\b/);
     }
 
-    async openExamples(): Promise<void> {
+    async openTemplates(): Promise<void> {
         if (await this.locators.burgerButton.isVisible()) {
             await this.locators.burgerButton.click();
             await expect(this.locators.openNavigation).toBeVisible();
         }
-        await this.locators.examplesLink.click();
-        await expect(this.page).toHaveURL(/#examples$/);
-        await this.waitForScrollToStop();
-        await expect(this.locators.examplesSection).toBeInViewport();
+        await this.locators.templatesLink.click();
+        await expect(this.page).toHaveURL(/\/templates\/?$/, {
+            timeout: 60_000,
+        });
+        // The filters get their handlers on DOMContentLoaded, and an earlier click only follows href="#"
+        await this.page.waitForLoadState('domcontentloaded', {
+            timeout: 60_000,
+        });
     }
 
-    async chooseLatexExample(
-        projects: ExampleProject[],
-        category: string
-    ): Promise<ExampleProject> {
-        const example = projects.find(
-            (project) =>
-                project.category === category && project.projectType === 'latex'
-        );
-        expect(
-            example,
-            `The landing has no LaTeX example in the ${category} category`
-        ).toBeDefined();
-        const inCategory = projects.filter(
-            (project) => project.category === category
-        );
-        // Only the first cards of a category are inside the slider viewport on a phone
-        expect(inCategory[0]).toBe(example);
-
-        const chosen = example as ExampleProject;
-        await this.locators.categoryTab(category).click();
-        await expect(this.locators.categoryTab(category)).toHaveClass(
-            /header__nav-link--active/
-        );
-        const card = this.locators.exampleCard(chosen.id);
-        await card.scrollIntoViewIfNeeded();
-        await expect(card).toBeInViewport();
-        return chosen;
-    }
-
-    private async waitForScrollToStop(): Promise<void> {
-        // The examples link scrolls smoothly, and a click during the animation lands on a moving layout
-        let previous = -1;
-        await expect
-            .poll(
-                async () => {
-                    const current = await this.page.evaluate(
-                        () => window.scrollY
-                    );
-                    const stopped = current === previous;
-                    previous = current;
-                    return stopped;
-                },
-                { intervals: [250], timeout: 15_000 }
-            )
-            .toBe(true);
+    /** The first template under the filter whose project has the given type, in catalog order */
+    async chooseTemplate(
+        filter: string,
+        projectType: 'latex' | 'markdown'
+    ): Promise<string> {
+        const tab = this.locators.templatesFilter(filter);
+        await tab.click();
+        await expect(tab).toHaveClass(/header__nav-link--active/);
+        const card = this.locators
+            .templateCards(filter)
+            .and(this.locators.templateCards(projectType))
+            .first();
+        await expect(
+            card,
+            `The catalog has no ${projectType} template under ${filter}`
+        ).toBeVisible();
+        const href = await card
+            .locator('a.blog-card__footer')
+            .getAttribute('href');
+        const projectId = href?.match(PROJECT_LINK)?.[1];
+        expect(projectId, `The template card links to ${href}`).toBeTruthy();
+        return projectId as string;
     }
 
     async openKnowledgeBase(): Promise<void> {
@@ -187,35 +142,50 @@ export class LandingDsl {
         await expect(button).toContainText(EXAMPLE_BUTTON_HINT);
         const href = await button.getAttribute('href');
         expect(href, 'The example button has no link').toBeTruthy();
-        const query = new URL(href as string, this.page.url()).searchParams;
-        const example: BlogExample = {
-            open: query.get('open') ?? undefined,
-            compute: query.get('compute') ?? undefined,
-            latex: query.get('latex') ?? undefined,
-            markdown: query.get('markdown') ?? undefined,
-        };
+        const slug = new URL(href as string, this.page.url()).searchParams.get(
+            'example'
+        );
+        expect(slug, `The example link ${href} names no article`).toBeTruthy();
+        const programResponse = this.page.waitForResponse(
+            (response) =>
+                response.request().method() === 'GET' &&
+                new URL(response.url()).pathname.endsWith(
+                    `/public/blog/${slug}/program`
+                ),
+            { timeout: 60_000 }
+        );
+        programResponse.catch(() => undefined);
         await button.click();
+        const response = await programResponse;
+        // Without the program the editor silently opens the previous draft, so a failed request must fail here
+        expect(
+            response.ok(),
+            `The example program returned HTTP ${response.status()}`
+        ).toBeTruthy();
+        const program = (await response.json()) as {
+            segments: BlogExample['segments'];
+        };
         await expect(this.page).toHaveURL(/\/project\//, { timeout: 60_000 });
         await new EditorLocators(this.page).editorRoot.waitFor({
             state: 'visible',
             timeout: 60_000,
         });
-        return example;
+        return { slug: slug as string, segments: program.segments };
     }
 
-    async clickExample(projectId: string): Promise<void> {
-        const card = this.locators.exampleCard(projectId);
-        await expect(card).toHaveAttribute('target', '_blank');
+    async clickTemplate(projectId: string): Promise<void> {
+        const link = this.locators.templateProjectLink(projectId);
+        await expect(link).toHaveAttribute('target', '_blank');
 
-        const [preview] = await Promise.all([
+        const [project] = await Promise.all([
             this.page.context().waitForEvent('page'),
-            card.click(),
+            link.click(),
         ]);
-        // The card always opens production in a new tab, while the scenario continues in the tested host with the captcha bypass
-        await preview.waitForURL(
+        // The card opens the project on the same host in a new tab, while the scenario continues in its own tab with the captcha bypass
+        await project.waitForURL(
             (url) => url.pathname === `/project/${projectId}`,
             { waitUntil: 'commit', timeout: 60_000 }
         );
-        await preview.close();
+        await project.close();
     }
 }
