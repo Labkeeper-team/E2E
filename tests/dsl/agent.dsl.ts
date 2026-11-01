@@ -203,21 +203,8 @@ export class AgentDsl {
         await expect(this.locators.responses).toHaveCount(0);
     }
 
-    async expectEditsWithButtons(): Promise<number> {
-        await expect(this.locators.hunkAcceptButtons.first()).toBeVisible({
-            timeout: 30_000,
-        });
-        await expect(this.locators.hunkRevertButtons.first()).toBeVisible();
-        await expect(this.locators.hunkTotal).toHaveText(/^Total \d+ changes$/);
-        const label = (await this.locators.hunkTotal.textContent()) ?? '';
-        return Number(label.match(/\d+/)?.[0]);
-    }
-
-    async acceptAll(): Promise<void> {
-        await this.locators.acceptAllButton.click();
-        await expect(this.locators.acceptAllButton).toBeHidden({
-            timeout: 30_000,
-        });
+    async expectNoPendingEdits(): Promise<void> {
         await expect(this.locators.hunkAcceptButtons).toHaveCount(0);
+        await expect(this.locators.acceptAllButton).toBeHidden();
     }
 }
