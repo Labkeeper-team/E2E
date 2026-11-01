@@ -68,6 +68,8 @@ test.describe('Old user agent mode scenarios', () => {
         });
 
         await test.step('sees the agent steps with the edits and the build', async () => {
+            await app.agent.expectStepsCollapsed(0);
+            await app.agent.expandSteps(0);
             await app.agent.expectSteps([
                 'Calling the model',
                 /segment|Added a|Changed a|Replaced lines/,
@@ -87,11 +89,13 @@ test.describe('Old user agent mode scenarios', () => {
             await app.agent.expectFileMentioned(TYPED_WORDS, PICTURE_NAME);
         });
 
-        await test.step('sends it and finds the previous steps collapsed', async () => {
+        await test.step('sends it and finds the steps of both runs collapsed', async () => {
             await app.agent.send();
             await app.agent.waitForAnswer();
+            // A new request folds the previous run even though it was expanded by hand
             await app.agent.expectStepsCollapsed(0);
-            await app.agent.expandSteps(0);
+            await app.agent.expectStepsCollapsed(1);
+            await app.agent.expandSteps(1);
         });
 
         await test.step('clears the history and asks not to confirm again', async () => {
