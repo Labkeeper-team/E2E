@@ -113,13 +113,10 @@ test.describe('Old user agent mode scenarios', () => {
             await app.agent.leaveAgentMode();
         });
 
-        // The agent mode gets its own accept and revert buttons with GH-189, until then the edits are accepted here
-        await test.step('accepts all edits of the agent in the editor', async () => {
-            const total = await app.agent.expectEditsWithButtons();
-            test.expect(total).toBeGreaterThan(0);
-            await app.agent.acceptAll();
-            await app.editor.waitForSaved();
+        // Since GH-189 the agent mode accepts the edits of a request when the next one is sent, so none wait here
+        await test.step('finds the edits of the agent accepted in the editor', async () => {
             await app.editor.expectAnySegmentContainsText(SECTION_TITLE);
+            await app.agent.expectNoPendingEdits();
         });
     });
 });

@@ -166,16 +166,6 @@ export class AgentLocators {
         );
     }
 
-    get hunkRevertButtons(): Locator {
-        return this.page.locator(
-            '.cm-hunk-btn--revert, .segment-hunk-btn--revert'
-        );
-    }
-
-    get hunkTotal(): Locator {
-        return this.page.locator('.hunk-global-bar__label');
-    }
-
     get acceptAllButton(): Locator {
         return this.page.getByRole('button', {
             name: 'Accept all',
