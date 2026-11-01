@@ -159,7 +159,7 @@ export class AgentDsl {
             );
     }
 
-    /** Steps of a finished run fold under the toggle of its request once the next request is sent */
+    /** Steps of a run fold under the toggle of its request as soon as the run ends */
     async expectStepsCollapsed(requestIndex: number): Promise<void> {
         await expect(this.locators.stepsToggle(requestIndex)).toHaveText(
             /^Agent steps: \d+$/
