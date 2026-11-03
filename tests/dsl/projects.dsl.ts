@@ -168,12 +168,12 @@ export class ProjectsDsl {
         const requestedName = this.uniqueProjectName(label);
 
         await this.openList();
-        await this.openAddProjectModal();
+        await this.openNewProjectPage();
         await this.locators.projectNameInput.fill(requestedName);
         const name = await this.locators.projectNameInput.inputValue();
         const projectTypeOption = this.locators.projectTypeOption(type);
         await projectTypeOption.click();
-        await expect(projectTypeOption).toHaveClass(/checked/);
+        await expect(projectTypeOption).toHaveAttribute('aria-pressed', 'true');
 
         const createResponsePromise = this.page.waitForResponse(
             (response) =>
@@ -239,18 +239,20 @@ export class ProjectsDsl {
         ).toBeTruthy();
     }
 
-    private async openAddProjectModal(): Promise<void> {
+    // кнопка «Add» в списке ведёт на страницу нового проекта, пустой проект там выбран сразу
+    private async openNewProjectPage(): Promise<void> {
         let lastError: unknown;
 
         for (let attempt = 0; attempt < 3; attempt += 1) {
             try {
-                if (!(await this.locators.addProjectModal.isVisible())) {
+                if (!(await this.locators.newProjectPage.isVisible())) {
                     await this.locators.addProjectButton.click();
                 }
-                await this.locators.addProjectModal.waitFor({
+                await this.locators.newProjectPage.waitFor({
                     state: 'visible',
-                    timeout: 5_000,
+                    timeout: 10_000,
                 });
+                await expect(this.page).toHaveURL(/\/projects\/new$/);
                 return;
             } catch (error) {
                 lastError = error;

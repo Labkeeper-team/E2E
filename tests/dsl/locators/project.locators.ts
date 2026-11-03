@@ -22,8 +22,9 @@ export class ProjectLocators {
             .first();
     }
 
-    get addProjectModal(): Locator {
-        return this.page.locator('.add-project-modal');
+    // окно создания заменила своя страница /projects/new
+    get newProjectPage(): Locator {
+        return this.page.locator('.new-project');
     }
 
     get editorRoot(): Locator {
@@ -35,20 +36,19 @@ export class ProjectLocators {
     }
 
     get projectNameInput(): Locator {
-        return this.addProjectModal.getByRole('textbox');
+        return this.newProjectPage.getByRole('textbox');
     }
 
     projectTypeOption(type: 'Markdown' | 'LaTeX'): Locator {
-        return this.addProjectModal.locator('.labkeeper-radio').filter({
-            hasText: new RegExp(`^${type}$`),
+        return this.newProjectPage.locator('.new-project__type').filter({
+            has: this.page.locator('.new-project__type-name', {
+                hasText: new RegExp(`^${type}$`),
+            }),
         });
     }
 
     get createProjectButton(): Locator {
-        return this.addProjectModal.getByRole('button', {
-            name: 'Create',
-            exact: true,
-        });
+        return this.newProjectPage.locator('.new-project__create');
     }
 
     projectRow(title: string): Locator {
