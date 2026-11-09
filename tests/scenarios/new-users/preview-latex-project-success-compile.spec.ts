@@ -37,6 +37,8 @@ test.describe('New user LaTeX preview scenarios', () => {
         await test.step('opens a LaTeX template from the landing catalog', async () => {
             await app.landing.open();
             await app.landing.declineCookies();
+            // The editor takes the site language, and its steps below read English labels
+            await app.landing.chooseLanguage('en');
             await app.landing.openTemplates();
             exampleId = await app.landing.chooseTemplate(
                 GUEST_COMPILABLE_CATEGORY,

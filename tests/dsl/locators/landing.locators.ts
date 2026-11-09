@@ -27,6 +27,14 @@ export class LandingLocators {
         return this.page.locator('nav.js-nav.header__nav--open');
     }
 
+    // The header keeps one switcher for wide pages and one inside the menu of narrow ones
+    languageButton(language: string): Locator {
+        return this.page
+            .locator(`.js-lang-switcher button[data-lang="${language}"]`)
+            .locator('visible=true')
+            .first();
+    }
+
     get templatesLink(): Locator {
         return this.page.locator('nav.js-nav a[href="/templates"]');
     }

@@ -90,6 +90,8 @@ test.describe('New user blog example scenarios', () => {
         await test.step('finds the knowledge base on the landing and opens the blog', async () => {
             await app.landing.open();
             await app.landing.declineCookies();
+            // The editor takes the site language, and its steps below read English labels
+            await app.landing.chooseLanguage('en');
             await app.landing.openKnowledgeBase();
             await app.landing.openAllArticles();
         });

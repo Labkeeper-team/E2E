@@ -7,13 +7,33 @@ export interface BlogExample {
     segments: { type: string; text: string }[];
 }
 
-const EXAMPLE_BUTTON_LABEL = 'Просмотреть пример';
-const EXAMPLE_BUTTON_HINT = 'в редакторе';
+export type SiteLanguage = 'ru' | 'en';
+
+// Labels the site translates; article titles are content and stay as written
+const SITE_LABELS: Record<
+    SiteLanguage,
+    { knowledgeTitle: string; exampleButton: string; exampleHint: string }
+> = {
+    ru: {
+        knowledgeTitle: 'База знаний',
+        exampleButton: 'Просмотреть пример',
+        exampleHint: 'в редакторе',
+    },
+    en: {
+        knowledgeTitle: 'Knowledge Base',
+        exampleButton: 'View example',
+        exampleHint: 'in editor',
+    },
+};
 const BLOG_PAGE_LIMIT = 30;
 const PROJECT_LINK = /\/project\/([0-9a-f-]{36})$/;
+// The site and the editor share the language through this localStorage key
+const SHARED_LANGUAGE_KEY = 'labkeeper_lang';
 
 export class LandingDsl {
     private readonly locators: LandingLocators;
+    // A fresh browser opens the site in Russian, which the site stores as the shared language
+    private language: SiteLanguage = 'ru';
 
     constructor(private readonly page: Page) {
         this.locators = new LandingLocators(page);
@@ -51,6 +71,35 @@ export class LandingDsl {
         await this.locators.cookieDeclineButton.click();
         // The banner slides away by a class and stays in the layout
         await expect(this.locators.cookieBanner).toHaveClass(/\bhidden\b/);
+    }
+
+    /**
+     * Picks the language with the switcher in the site header. The editor
+     * follows the site language since LabkeeperEditor#175, and the editor
+     * steps read it in English
+     */
+    async chooseLanguage(language: SiteLanguage): Promise<void> {
+        if (await this.locators.burgerButton.isVisible()) {
+            await this.locators.burgerButton.click();
+            await expect(this.locators.openNavigation).toBeVisible();
+        }
+        await this.locators.languageButton(language).click();
+        // The server renders the page in the language of a cookie, so the switch reloads the page with the menu closed
+        await expect(this.page.locator('html')).toHaveAttribute(
+            'lang',
+            language,
+            { timeout: 60_000 }
+        );
+        await expect(this.locators.preloader).toHaveClass(/preloader--hidden/, {
+            timeout: 30_000,
+        });
+        expect(
+            await this.page.evaluate(
+                (key) => window.localStorage.getItem(key),
+                SHARED_LANGUAGE_KEY
+            )
+        ).toBe(language);
+        this.language = language;
     }
 
     async openTemplates(): Promise<void> {
@@ -94,7 +143,9 @@ export class LandingDsl {
 
     async openKnowledgeBase(): Promise<void> {
         await this.locators.knowledgeSection.scrollIntoViewIfNeeded();
-        await expect(this.locators.knowledgeTitle).toHaveText('База знаний');
+        await expect(this.locators.knowledgeTitle).toHaveText(
+            SITE_LABELS[this.language].knowledgeTitle
+        );
         await expect(this.locators.allArticlesLink).toBeVisible();
     }
 
@@ -138,8 +189,12 @@ export class LandingDsl {
     async openArticleExample(): Promise<BlogExample> {
         const button = this.locators.visibleExampleButton;
         await button.scrollIntoViewIfNeeded();
-        await expect(button).toContainText(EXAMPLE_BUTTON_LABEL);
-        await expect(button).toContainText(EXAMPLE_BUTTON_HINT);
+        await expect(button).toContainText(
+            SITE_LABELS[this.language].exampleButton
+        );
+        await expect(button).toContainText(
+            SITE_LABELS[this.language].exampleHint
+        );
         const href = await button.getAttribute('href');
         expect(href, 'The example button has no link').toBeTruthy();
         const slug = new URL(href as string, this.page.url()).searchParams.get(
