@@ -397,7 +397,7 @@ export class ProjectsDsl {
         await this.openList();
         const row = this.locators.projectRow(title);
         await expect(row).toBeVisible({ timeout: 30_000 });
-        await this.locators.projectDeleteButton(title).click();
+        await this.askToDelete(title);
         await this.locators.confirmDeleteButton.click();
         await expect(row).toHaveCount(0);
 
@@ -592,13 +592,30 @@ export class ProjectsDsl {
         );
     }
 
+    /**
+     * Удаление до окна подтверждения. На старой странице корзина в строке, на
+     * новой (LabkeeperEditor#251) пункт меню «⋯». Прод получит новую страницу
+     * со следующим релизом: старую ветку убрать после него
+     */
+    private async askToDelete(title: string): Promise<void> {
+        const oldDelete = this.locators.projectDeleteButton(title);
+        if ((await oldDelete.count()) > 0) {
+            await oldDelete.click();
+            return;
+        }
+        // кнопка видна при наведении на строку
+        await this.locators.projectRow(title).hover();
+        await this.locators.projectActionsButton(title).click();
+        await this.locators.deleteMenuItem.click();
+    }
+
     private async deleteProjectRow(
         id: string,
         title: string
     ): Promise<{ status: number; failure?: string }> {
         const row = this.locators.projectRow(title);
         await expect(row).toBeVisible({ timeout: 30_000 });
-        await this.locators.projectDeleteButton(title).click();
+        await this.askToDelete(title);
         const responsePromise = this.page.waitForResponse(
             (response) =>
                 response.request().method() === 'DELETE' &&

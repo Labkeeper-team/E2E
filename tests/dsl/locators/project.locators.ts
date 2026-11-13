@@ -14,10 +14,17 @@ export class ProjectLocators {
             .filter({ hasText: new RegExp(`^${title}$`) });
     }
 
+    // старая страница: кнопка под таблицей; новая (LabkeeperEditor#251): в боковой
+    // панели, на телефоне в шапке, без проектов посередине страницы
     get addProjectButton(): Locator {
         return this.page
             .locator(
-                'button.add-project-button:visible, .add-project-button-footer button:visible'
+                [
+                    'button.add-project-button:visible',
+                    '.add-project-button-footer button:visible',
+                    'button.projects-sidebar__add:visible',
+                    'button.projects-header__add:visible',
+                ].join(', ')
             )
             .first();
     }
@@ -71,8 +78,21 @@ export class ProjectLocators {
         );
     }
 
+    // старая страница: корзина прямо в строке
     projectDeleteButton(title: string): Locator {
         return this.projectRow(title).locator('.delete-project-container');
+    }
+
+    // новая страница: «⋯» в строке открывает меню проекта
+    projectActionsButton(title: string): Locator {
+        return this.projectRow(title).locator('button[aria-haspopup="menu"]');
+    }
+
+    // меню рисуется в body, пункт ищем по действию, а не по тексту языка
+    get deleteMenuItem(): Locator {
+        return this.page.locator(
+            '[role="menu"] [role="menuitem"][data-action="delete"]'
+        );
     }
 
     get confirmDeleteButton(): Locator {
