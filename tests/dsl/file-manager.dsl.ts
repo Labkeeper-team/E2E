@@ -115,7 +115,18 @@ export class FileManagerDsl {
         await expect(this.files.textFileEditor).toBeVisible({
             timeout: 30_000,
         });
-        await expect(this.files.textFileEditorTitle).toHaveText(name);
+        try {
+            await expect(this.files.textFileEditorTitle).toHaveText(name);
+        } catch (error) {
+            // A daily Android run saw the panel and then lost it before its title.
+            // The editor closes a file it cannot load and says why in a toast, so the toast goes to the report
+            const toasts = await this.files.toast.allTextContents();
+            throw new Error(
+                `The text file editor for ${name} closed after it opened. ` +
+                    `Toasts: ${toasts.length ? toasts.join(' | ') : 'none'}`,
+                { cause: error }
+            );
+        }
         await expect(this.files.textFileEditorContent).toBeVisible({
             timeout: 30_000,
         });
