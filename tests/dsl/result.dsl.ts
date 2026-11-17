@@ -470,6 +470,14 @@ export class ResultDsl {
         }
     }
 
+    /** The preview the editor draws by itself for Markdown without computations */
+    async expectMarkdownPreview(): Promise<void> {
+        await this.projectView.showPdf();
+        await expect(this.locators.markdown.first()).toHaveText(/\S/, {
+            timeout: 30_000,
+        });
+    }
+
     async expectMarkdownText(text: string | RegExp): Promise<void> {
         await this.projectView.showPdf();
         await expect(this.locators.markdown.getByText(text)).toBeVisible({

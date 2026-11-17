@@ -152,6 +152,13 @@ export class EditorLocators {
         return this.page.locator('.run-button:not(.disabled)');
     }
 
+    // A Markdown project without computations has nothing to send to the server
+    get nothingToRunButton(): Locator {
+        return this.page
+            .locator('.run-button.disabled')
+            .filter({ hasText: /^Add computation segment to run$/ });
+    }
+
     get compilingRunButton(): Locator {
         return this.page
             .locator('.run-button.disabled')
