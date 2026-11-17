@@ -60,10 +60,39 @@ export class LandingDsl {
             waitUntil: 'domcontentloaded',
             timeout: 60_000,
         });
+        await this.waitForBrowserLanguageReload();
         await expect(this.locators.preloader).toHaveClass(/preloader--hidden/, {
             timeout: 30_000,
         });
         await expect(this.locators.loginLink).toBeVisible({ timeout: 30_000 });
+    }
+
+    /**
+     * On the first visit the site reloads itself in the language of an English
+     * or Chinese browser, and the test browsers are English. The language goes
+     * to localStorage before the reload, so until the page matches it, steps
+     * would act on a page that is about to go away
+     */
+    private async waitForBrowserLanguageReload(): Promise<void> {
+        await expect
+            .poll(
+                async () => {
+                    try {
+                        return await this.page.evaluate((key) => {
+                            const stored = window.localStorage.getItem(key);
+                            return (
+                                stored === null ||
+                                stored === document.documentElement.lang
+                            );
+                        }, SHARED_LANGUAGE_KEY);
+                    } catch {
+                        // the context went away with the reload
+                        return false;
+                    }
+                },
+                { timeout: 60_000 }
+            )
+            .toBe(true);
     }
 
     async declineCookies(): Promise<void> {
@@ -79,20 +108,23 @@ export class LandingDsl {
      * steps read it in English
      */
     async chooseLanguage(language: SiteLanguage): Promise<void> {
-        if (await this.locators.burgerButton.isVisible()) {
-            await this.locators.burgerButton.click();
-            await expect(this.locators.openNavigation).toBeVisible();
+        const html = this.page.locator('html');
+        // A browser in English gets the English page on its first visit
+        // already, and the switcher ignores the current language: the menu
+        // opened for it would stay open over the page
+        if ((await html.getAttribute('lang')) !== language) {
+            await this.setNavigationOpen(true);
+            await this.locators.languageButton(language).click();
+            // The server renders the page in the language of a cookie, so the switch reloads the page with the menu closed
+            await expect(html).toHaveAttribute('lang', language, {
+                timeout: 60_000,
+            });
+            await expect(this.locators.preloader).toHaveClass(
+                /preloader--hidden/,
+                { timeout: 30_000 }
+            );
         }
-        await this.locators.languageButton(language).click();
-        // The server renders the page in the language of a cookie, so the switch reloads the page with the menu closed
-        await expect(this.page.locator('html')).toHaveAttribute(
-            'lang',
-            language,
-            { timeout: 60_000 }
-        );
-        await expect(this.locators.preloader).toHaveClass(/preloader--hidden/, {
-            timeout: 30_000,
-        });
+        await this.setNavigationOpen(false);
         expect(
             await this.page.evaluate(
                 (key) => window.localStorage.getItem(key),
@@ -103,10 +135,7 @@ export class LandingDsl {
     }
 
     async openTemplates(): Promise<void> {
-        if (await this.locators.burgerButton.isVisible()) {
-            await this.locators.burgerButton.click();
-            await expect(this.locators.openNavigation).toBeVisible();
-        }
+        await this.setNavigationOpen(true);
         await this.locators.templatesLink.click();
         await expect(this.page).toHaveURL(/\/templates\/?$/, {
             timeout: 60_000,
@@ -142,6 +171,8 @@ export class LandingDsl {
     }
 
     async openKnowledgeBase(): Promise<void> {
+        // the open menu of a narrow page covers the section and takes its clicks
+        await this.setNavigationOpen(false);
         await this.locators.knowledgeSection.scrollIntoViewIfNeeded();
         await expect(this.locators.knowledgeTitle).toHaveText(
             SITE_LABELS[this.language].knowledgeTitle
@@ -150,8 +181,28 @@ export class LandingDsl {
     }
 
     async openAllArticles(): Promise<void> {
+        await this.setNavigationOpen(false);
         await this.locators.allArticlesLink.click();
         await expect(this.page).toHaveURL(/\/blog\/?$/, { timeout: 60_000 });
+    }
+
+    /**
+     * A narrow page hides the navigation behind the burger, and the burger
+     * toggles it. Pressing it without looking closes a menu that is already
+     * open, so the state is checked first
+     */
+    private async setNavigationOpen(open: boolean): Promise<void> {
+        if (!(await this.locators.burgerButton.isVisible())) {
+            return;
+        }
+        if ((await this.locators.openNavigation.isVisible()) !== open) {
+            await this.locators.burgerButton.click();
+        }
+        if (open) {
+            await expect(this.locators.openNavigation).toBeVisible();
+        } else {
+            await expect(this.locators.openNavigation).toHaveCount(0);
+        }
     }
 
     async openBlog(): Promise<void> {
