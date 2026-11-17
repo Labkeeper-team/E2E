@@ -505,10 +505,15 @@ export class EditorDsl {
 
     async expectReadOnlyPublicProject(): Promise<void> {
         await this.projectView.showEditor();
+        // A template with files and a compiled PDF loads them before the editor shows its state
         if (this.projectView.isMobile()) {
-            await expect(this.locators.cloneProjectButton).toBeVisible();
+            await expect(this.locators.cloneProjectButton).toBeVisible({
+                timeout: 60_000,
+            });
         } else {
-            await expect(this.locators.readOnlyBadge).toBeVisible();
+            await expect(this.locators.readOnlyBadge).toBeVisible({
+                timeout: 60_000,
+            });
         }
         await expect(this.locators.addSegmentSelect).toBeHidden();
 

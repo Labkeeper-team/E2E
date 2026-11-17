@@ -50,6 +50,11 @@ export class LandingLocators {
         );
     }
 
+    // Every card of the catalog: the page shows them a page at a time, the rest stay in the DOM hidden
+    get allTemplateCards(): Locator {
+        return this.page.locator('#blog-grid article.blog-item');
+    }
+
     // The card opens the template project in a new tab
     templateProjectLink(projectId: string): Locator {
         return this.page.locator(

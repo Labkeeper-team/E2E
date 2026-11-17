@@ -9,6 +9,12 @@ export interface BlogExample {
 
 export type SiteLanguage = 'ru' | 'en';
 
+export interface TemplateCard {
+    slug: string;
+    title: string;
+    projectId: string;
+}
+
 // Labels the site translates; article titles are content and stay as written
 const SITE_LABELS: Record<
     SiteLanguage,
@@ -168,6 +174,45 @@ export class LandingDsl {
         const projectId = href?.match(PROJECT_LINK)?.[1];
         expect(projectId, `The template card links to ${href}`).toBeTruthy();
         return projectId as string;
+    }
+
+    /**
+     * Every template of the catalog with its project, read from the page so
+     * that a new template is checked without touching the tests (GH-265)
+     */
+    async listTemplates(): Promise<TemplateCard[]> {
+        await expect(this.locators.allTemplateCards.first()).toBeAttached({
+            timeout: 30_000,
+        });
+        const cards = await this.locators.allTemplateCards.evaluateAll(
+            (items) =>
+                items.map((item) => ({
+                    title:
+                        item
+                            .querySelector('.blog-card__title')
+                            ?.textContent?.trim() ?? '',
+                    page:
+                        item
+                            .querySelector('a.template-card__body')
+                            ?.getAttribute('href') ?? '',
+                    project:
+                        item
+                            .querySelector('a.blog-card__footer')
+                            ?.getAttribute('href') ?? '',
+                }))
+        );
+        return cards.map((card) => {
+            const projectId = card.project.match(PROJECT_LINK)?.[1];
+            expect(
+                projectId,
+                `The template card "${card.title}" links to ${card.project}`
+            ).toBeTruthy();
+            return {
+                slug: card.page.split('/').filter(Boolean).pop() || card.title,
+                title: card.title,
+                projectId: projectId as string,
+            };
+        });
     }
 
     async openKnowledgeBase(): Promise<void> {

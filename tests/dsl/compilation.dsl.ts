@@ -95,6 +95,18 @@ export class CompilationDsl {
         return compilation;
     }
 
+    /**
+     * Whether Run sends anything. A LaTeX project always does, a Markdown one
+     * only with computations: without them its preview needs no server
+     */
+    async hasSomethingToRun(): Promise<boolean> {
+        await this.projectView.showEditor();
+        await expect(
+            this.locators.runButton.or(this.locators.nothingToRunButton)
+        ).toBeVisible({ timeout: 60_000 });
+        return this.locators.runButton.isVisible();
+    }
+
     async runPdfAsGuest(): Promise<GuestPdfRunResult> {
         const response = await this.runShowingProgress();
         // HTTP 425 is the daily anonymous limit, and the editor answers it with the login modal
