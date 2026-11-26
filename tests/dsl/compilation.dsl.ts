@@ -33,6 +33,11 @@ export type AutomaticCompilation =
     | { outcome: 'markdown' }
     | { outcome: 'loginRequired' };
 
+export interface DocumentRunResult {
+    /** The server returned a PDF together with compiler errors */
+    withErrors: boolean;
+}
+
 export type GuestPdfRunResult =
     | { outcome: 'compiled'; pdfUri: string }
     | { outcome: 'loginRequired' };
@@ -49,20 +54,38 @@ export class CompilationDsl {
     }
 
     async run(): Promise<CompilationResult> {
-        await this.projectView.showEditor();
-        if (await this.locators.autocompletePopup.isVisible()) {
-            await this.page.keyboard.press('Escape');
-            await expect(this.locators.autocompletePopup).toBeHidden();
-        }
-        const response = await this.clickRunAndWaitForResponse();
-        await expect(this.locators.enabledRunButton).toBeAttached({
-            timeout: 60_000,
-        });
-
+        const response = await this.runAndWaitForResponse();
         return {
             status: response.status(),
             url: response.url(),
         };
+    }
+
+    /**
+     * Runs and accepts a PDF that came with compiler errors: LaTeX often gets past an error,
+     * and the server then answers HTTP 203 with the PDF in unfinishedPdfUri.
+     * A Markdown run has no PDF, so there HTTP 203 is still a failure
+     */
+    async runProducingDocument(): Promise<DocumentRunResult> {
+        const response = await this.runAndWaitForResponse();
+        if (
+            response.status() === 203 &&
+            new URL(response.url()).pathname.endsWith('/pdf')
+        ) {
+            const { unfinishedPdfUri } = (await response.json()) as {
+                unfinishedPdfUri?: string | null;
+            };
+            expect(
+                unfinishedPdfUri,
+                'LaTeX compilation returned HTTP 203 without a PDF'
+            ).toBeTruthy();
+            return { withErrors: true };
+        }
+        expect(
+            response.status(),
+            `Compilation returned HTTP ${response.status()}`
+        ).toBe(200);
+        return { withErrors: false };
     }
 
     /**
@@ -137,6 +160,19 @@ export class CompilationDsl {
 
     async runAnonymousWithCompilationErrors(): Promise<void> {
         await this.runAnonymousWithExpectedStatus(203);
+    }
+
+    private async runAndWaitForResponse(): Promise<Response> {
+        await this.projectView.showEditor();
+        if (await this.locators.autocompletePopup.isVisible()) {
+            await this.page.keyboard.press('Escape');
+            await expect(this.locators.autocompletePopup).toBeHidden();
+        }
+        const response = await this.clickRunAndWaitForResponse();
+        await expect(this.locators.enabledRunButton).toBeAttached({
+            timeout: 60_000,
+        });
+        return response;
     }
 
     private async runShowingProgress(): Promise<Response> {
