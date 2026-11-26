@@ -16,6 +16,7 @@ import {
 } from './projects.dsl';
 import { ResponseRecorder } from './response-recorder';
 import { ResultDsl } from './result.dsl';
+import { StaticFilesDsl } from './static-files.dsl';
 
 export class LabkeeperDsl {
     readonly access: AccessDsl;
@@ -30,6 +31,7 @@ export class LabkeeperDsl {
     readonly performance: EditorPerformanceDsl;
     readonly projects: ProjectsDsl;
     readonly results: ResultDsl;
+    readonly staticFiles: StaticFilesDsl;
 
     constructor(
         private readonly page: Page,
@@ -58,6 +60,7 @@ export class LabkeeperDsl {
             this.projects
         );
         this.results = new ResultDsl(page, projectView, responses);
+        this.staticFiles = new StaticFilesDsl(page);
     }
 
     async openAnonymousEditor(): Promise<void> {
