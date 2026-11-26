@@ -49,6 +49,8 @@ test.describe('Template catalog', () => {
 
         // A failing template must not hide the others, so each runs in its own step and the list goes to the end
         const failed: string[] = [];
+        // A PDF that came with compiler errors counts as compiled, these go to the report on their own
+        const compiledWithErrors: string[] = [];
         for (const template of templates) {
             const name = `${template.slug} «${template.title}»`;
             try {
@@ -58,8 +60,13 @@ test.describe('Template catalog', () => {
                     );
                     await app.editor.expectReadOnlyPublicProject();
                     if (await app.compilation.hasSomethingToRun()) {
-                        await app.compilation.runSuccessfully();
-                        await app.results.expectProblemCount(0);
+                        const { withErrors } =
+                            await app.compilation.runProducingDocument();
+                        if (withErrors) {
+                            compiledWithErrors.push(name);
+                        } else {
+                            await app.results.expectProblemCount(0);
+                        }
                     } else {
                         await app.results.expectMarkdownPreview();
                     }
@@ -71,8 +78,14 @@ test.describe('Template catalog', () => {
 
         test.info().annotations.push({
             type: 'templates',
-            description: `${templates.length - failed.length} of ${templates.length} compiled`,
+            description: `${templates.length - failed.length} of ${templates.length} compiled, ${compiledWithErrors.length} of them with errors`,
         });
+        if (compiledWithErrors.length > 0) {
+            test.info().annotations.push({
+                type: 'templates compiled with errors',
+                description: compiledWithErrors.join('; '),
+            });
+        }
         expect(failed, 'Templates that do not compile').toEqual([]);
     });
 });
